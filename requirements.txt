@@ -1,0 +1,7 @@
+requests==2.32.3
+pandas==2.2.3
+
+# Synthetic data generation
+faker==33.1.0
+pyyaml==6.0.2
+python-dateutil==2.9.0

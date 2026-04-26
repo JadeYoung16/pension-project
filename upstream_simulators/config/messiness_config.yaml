@@ -1,0 +1,50 @@
+# =============================================================================
+# Messiness Configuration
+# =============================================================================
+# Rates for intentional imperfections in generated data. Each file has its own
+# section. Rates are probabilities (0.0 - 1.0).
+#
+# Set extreme_mode: true to inflate all rates to 1.0 for testing pipeline
+# error handling paths.
+# =============================================================================
+
+extreme_mode: false
+
+member_census:
+  email_missing_general: 0.15
+  email_missing_elder: 0.35           # Members 60+
+  middle_initial_missing: 0.60
+  marital_status_unknown: 0.03
+  sex_unknown: 0.02
+  phone_missing: 0.08
+  trailing_whitespace: 0.05
+  non_ascii_name: 0.01
+  dob_format_drift: 0.01              # Non-standard date format
+
+transactions:
+  rejected_status: 0.005
+  missing_pay_period_start: 0.02
+  rounding_drift: 0.002
+  duplicate_transaction_id: 0.0001
+
+life_events:
+  timezone_mixed: 0.10                # EST vs UTC
+  notes_garbage_text: 0.05
+  quote_abandoned_after_issue: 0.15   # Quote issued but no complete
+
+portal_events:
+  user_agent_missing: 0.03
+  ip_hash_null: 0.05                  # Mobile app users
+  malformed_json: 0.0001              # 1 per 10,000 rows
+  timestamp_in_utc: 0.20              # Instead of local TZ
+
+call_logs:
+  csat_score_null: 0.30
+  notes_garbled: 0.05
+
+seminar_attendance:
+  no_show_rate: 0.10                  # Registered but didn't attend
+
+email_engagement:
+  bounce_rate: 0.08
+  unsubscribe_rate: 0.005

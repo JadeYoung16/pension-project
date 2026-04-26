@@ -1,0 +1,340 @@
+# =============================================================================
+# Member Census — Machine-readable record layout
+# =============================================================================
+# This YAML is the authoritative source for the fixed-width layout.
+# Both the generator (to write) and the pipeline parser (to read) will load
+# this file. Human-readable spec is in docs/03_record_layouts.md.
+# =============================================================================
+
+file:
+  encoding: iso-8859-1          # Latin-1, supports French characters
+  line_terminator: "\r\n"        # CRLF, simulates mainframe origin
+  record_length: 400
+
+# Record type codes (first 3 characters of every line)
+record_types:
+  header: HDR
+  detail: "001"
+  trailer: TRL
+
+# -----------------------------------------------------------------------------
+# Header record
+# -----------------------------------------------------------------------------
+# Fields positions are 1-indexed and inclusive on both ends (mainframe
+# convention). Python slice logic must convert to [start-1 : end].
+header_fields:
+  - name: RECORD_TYPE
+    start: 1
+    end: 3
+    type: char
+    fixed_value: "HDR"
+  - name: PLAN_CODE
+    start: 4
+    end: 12
+    type: char
+    align: left
+    pad: " "
+  - name: AS_OF_DATE
+    start: 13
+    end: 20
+    type: char
+    format: "%Y%m%d"
+  - name: RECORD_COUNT
+    start: 21
+    end: 27
+    type: num
+    align: right
+    pad: "0"
+  - name: CREATE_TIMESTAMP
+    start: 28
+    end: 41
+    type: char
+    format: "%Y%m%d%H%M%S"
+  - name: LAYOUT_VERSION
+    start: 42
+    end: 44
+    type: char
+    fixed_value: "003"
+  - name: SYSTEM_ID
+    start: 45
+    end: 74
+    type: char
+    align: left
+    pad: " "
+    fixed_value: "ONCAP_ADMIN_SYSTEM_V10"
+  - name: FILLER
+    start: 75
+    end: 400
+    type: char
+    pad: " "
+
+# -----------------------------------------------------------------------------
+# Detail record (member row)
+# -----------------------------------------------------------------------------
+detail_fields:
+  - name: RECORD_TYPE
+    start: 1
+    end: 3
+    type: char
+    fixed_value: "001"
+  - name: MEMBER_ID
+    start: 4
+    end: 13
+    type: num
+    align: right
+    pad: "0"
+  - name: SIN_LAST_4
+    start: 14
+    end: 17
+    type: num
+    align: right
+    pad: "0"
+    nullable: true
+  - name: FIRST_NAME
+    start: 18
+    end: 42
+    type: char
+    align: left
+    pad: " "
+  - name: MIDDLE_INITIAL
+    start: 43
+    end: 43
+    type: char
+    nullable: true
+  - name: LAST_NAME
+    start: 44
+    end: 73
+    type: char
+    align: left
+    pad: " "
+  - name: DOB
+    start: 74
+    end: 81
+    type: char
+    format: "%Y%m%d"
+  - name: SEX_CODE
+    start: 82
+    end: 82
+    type: char
+  - name: MARITAL_STATUS_CODE
+    start: 83
+    end: 83
+    type: char
+  - name: LANGUAGE_PREFERENCE
+    start: 84
+    end: 85
+    type: char
+  - name: STREET_ADDRESS
+    start: 86
+    end: 125
+    type: char
+    align: left
+    pad: " "
+  - name: CITY
+    start: 126
+    end: 150
+    type: char
+    align: left
+    pad: " "
+  - name: PROVINCE
+    start: 151
+    end: 152
+    type: char
+    fixed_value: "ON"
+  - name: POSTAL_CODE
+    start: 153
+    end: 159
+    type: char
+    align: left
+    pad: " "
+  - name: PHONE
+    start: 160
+    end: 171
+    type: char
+    align: left
+    pad: " "
+    nullable: true
+  - name: EMAIL
+    start: 172
+    end: 231
+    type: char
+    align: left
+    pad: " "
+    nullable: true
+  - name: EMPLOYER_ID
+    start: 232
+    end: 241
+    type: char
+    align: left
+    pad: " "
+  - name: HIRE_DATE
+    start: 242
+    end: 249
+    type: char
+    format: "%Y%m%d"
+  - name: ENROLLMENT_DATE
+    start: 250
+    end: 257
+    type: char
+    format: "%Y%m%d"
+  - name: TERMINATION_DATE
+    start: 258
+    end: 265
+    type: char
+    format: "%Y%m%d"
+    nullable: true
+  - name: STATUS_CODE
+    start: 266
+    end: 266
+    type: char
+  - name: EMPLOYMENT_TYPE
+    start: 267
+    end: 268
+    type: char
+  - name: ANNUAL_SALARY
+    start: 269
+    end: 278
+    type: num
+    align: right
+    pad: "0"
+    implicit_decimals: 2
+  - name: SALARY_BAND_CODE
+    start: 279
+    end: 280
+    type: char
+  - name: JOB_CATEGORY
+    start: 281
+    end: 283
+    type: char
+  - name: CREDITED_SERVICE_YEARS
+    start: 284
+    end: 288
+    type: num
+    align: right
+    pad: "0"
+    implicit_decimals: 2
+  - name: ELIGIBLE_BUYBACK_SERVICE
+    start: 289
+    end: 293
+    type: num
+    align: right
+    pad: "0"
+    implicit_decimals: 2
+    nullable: true
+  - name: LAST_BUYBACK_LEAVE_END_DATE
+    start: 294
+    end: 301
+    type: char
+    format: "%Y%m%d"
+    nullable: true
+  - name: NORMAL_RETIREMENT_DATE
+    start: 302
+    end: 309
+    type: char
+    format: "%Y%m%d"
+  - name: ACCRUED_ANNUAL_PENSION
+    start: 310
+    end: 319
+    type: num
+    align: right
+    pad: "0"
+    implicit_decimals: 2
+  - name: BENEFICIARY_ON_FILE
+    start: 320
+    end: 320
+    type: char
+  - name: MEMBER_SINCE_DATE
+    start: 321
+    end: 328
+    type: char
+    format: "%Y%m%d"
+  - name: LAST_STATEMENT_DATE
+    start: 329
+    end: 336
+    type: char
+    format: "%Y%m%d"
+    nullable: true
+  - name: FILLER
+    start: 337
+    end: 399
+    type: char
+    pad: " "
+  - name: RECORD_STATUS
+    start: 400
+    end: 400
+    type: char
+    fixed_value: "A"
+
+# -----------------------------------------------------------------------------
+# Trailer record
+# -----------------------------------------------------------------------------
+trailer_fields:
+  - name: RECORD_TYPE
+    start: 1
+    end: 3
+    type: char
+    fixed_value: "TRL"
+  - name: AS_OF_DATE
+    start: 4
+    end: 11
+    type: char
+    format: "%Y%m%d"
+  - name: TOTAL_RECORD_COUNT
+    start: 12
+    end: 18
+    type: num
+    align: right
+    pad: "0"
+  - name: ACTIVE_COUNT
+    start: 19
+    end: 25
+    type: num
+    align: right
+    pad: "0"
+  - name: DEFERRED_COUNT
+    start: 26
+    end: 32
+    type: num
+    align: right
+    pad: "0"
+  - name: RETIRED_COUNT
+    start: 33
+    end: 39
+    type: num
+    align: right
+    pad: "0"
+  - name: TERMINATED_COUNT
+    start: 40
+    end: 46
+    type: num
+    align: right
+    pad: "0"
+  - name: SURVIVOR_COUNT
+    start: 47
+    end: 53
+    type: num
+    align: right
+    pad: "0"
+  - name: SUM_ANNUAL_SALARY
+    start: 54
+    end: 67
+    type: num
+    align: right
+    pad: "0"
+    implicit_decimals: 2
+  - name: SUM_ACCRUED_PENSION
+    start: 68
+    end: 81
+    type: num
+    align: right
+    pad: "0"
+    implicit_decimals: 2
+  - name: CHECKSUM
+    start: 82
+    end: 113
+    type: char
+  - name: FILLER
+    start: 114
+    end: 400
+    type: char
+    pad: " "

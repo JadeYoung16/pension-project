@@ -1,0 +1,61 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# ===== Data =====
+# Raw and generated data should not be in version control
+# (regenerate via scripts/downloaders)
+data/
+*.csv
+*.parquet
+*.xlsx
+*.xls
+*.zip
+*.tar.gz
+# Allow small reference/sample files if explicitly added
+!data/.gitkeep
+!data/README.md
+
+# ===== Notebooks =====
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ===== IDE / Editor =====
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+
+# ===== Secrets / config =====
+.env
+.env.local
+*.pem
+*.key
+
+# ===== Logs =====
+*.log
+logs/
+
+# ===== Docker =====
+# Keep Dockerfiles, ignore local volumes
+docker-volumes/

@@ -1,0 +1,189 @@
+# =============================================================================
+# ONCAP Pension Plan — Plan Configuration
+# =============================================================================
+# This YAML is the single source of truth for plan-level parameters used by
+# all generators. Changing a value here changes generated data everywhere.
+#
+# Do NOT put messiness rates here — those live in messiness_config.yaml.
+# Do NOT put record layouts here — those live in record_layouts/*.yaml.
+# =============================================================================
+
+plan:
+  plan_code: ONCAP001
+  plan_name: "ONCAP Pension Plan"
+  effective_date: "2014-01-01"
+  as_of_date: "2024-01-31"
+  snapshot_previous_month: "2023-12-31"
+
+seeds:
+  base: 42
+  employer: 43
+  member: 44
+  transaction: 45
+  life_event: 46
+  portal: 47
+  call: 48
+  seminar: 49
+  email: 50
+
+contributions:
+  member_rate: 0.03
+  employer_rate: 0.03
+  accrual_rate: 0.006
+  normal_retirement_age: 65
+
+employers:
+  total_count: 400
+
+  # Size band distribution based on observed Ontario T3010 Schedule 3 data.
+  # Numbers reflect total_employees = FT (column 300) + PT (column 370)
+  # after filtering out religious-category charities with FT > 500 (data quality).
+  size_bands:
+    - name: LARGE
+      count: 20
+      employee_count_range: [500, 20000]
+      members_per_employer_avg: 1800      # was 1000
+    - name: MEDIUM
+      count: 60
+      employee_count_range: [100, 499]
+      members_per_employer_avg: 150       # was 250
+    - name: SMALL
+      count: 150
+      employee_count_range: [20, 99]
+      members_per_employer_avg: 30        # was 80
+    - name: MICRO
+      count: 170
+      employee_count_range: [5, 19]
+      members_per_employer_avg: 3         # was 17
+
+  pay_frequency_distribution:
+    BW: 0.60
+    SM: 0.25
+    MO: 0.10
+    WK: 0.05
+
+  status_distribution:
+    ACTIVE: 0.95
+    WITHDRAWN: 0.05
+
+members:
+  total_count: 50000
+  status_distribution:
+    A: 0.55
+    D: 0.20
+    R: 0.15
+    T: 0.08
+    S: 0.02
+  sex_distribution:
+    "1": 0.28
+    "2": 0.70
+    "9": 0.02
+  marital_status_distribution:
+    S: 0.35
+    M: 0.50
+    D: 0.08
+    W: 0.04
+    U: 0.03
+  language_preference_distribution:
+    EN: 0.92
+    FR: 0.08
+  employment_type_distribution:
+    FT: 0.75
+    PT: 0.25
+  age_by_status:
+    A: [22, 65, 42]
+    D: [25, 70, 48]
+    R: [55, 95, 71]
+    T: [22, 50, 31]
+    S: [40, 95, 68]
+  salary_bands:
+    - code: EN
+      name: Entry
+      range: [35000, 50000]
+      weight: 0.30
+    - code: MD
+      name: Mid
+      range: [50000, 75000]
+      weight: 0.45
+    - code: SR
+      name: Senior
+      range: [75000, 110000]
+      weight: 0.20
+    - code: EX
+      name: Executive
+      range: [110000, 180000]
+      weight: 0.05
+  job_categories:
+    SVC: 0.25
+    ADM: 0.30
+    MGR: 0.20
+    EXE: 0.05
+    PRF: 0.20
+  city_distribution:
+    Toronto: 0.35
+    Ottawa: 0.10
+    Hamilton: 0.07
+    London: 0.06
+    Mississauga: 0.06
+    Brampton: 0.05
+    Other: 0.31
+  service_years_distribution:
+    - range: [0, 2]
+      weight: 0.25
+    - range: [2, 5]
+      weight: 0.30
+    - range: [5, 10]
+      weight: 0.35
+    - range: [10, 10]
+      weight: 0.10
+
+buyback:
+  eligible_rate: 0.30
+  category_distribution:
+    ML: 0.30
+    LOA: 0.25
+    PST: 0.20
+    PEP: 0.15
+    PTT: 0.10
+  propensity:
+    base: 0.05
+    age_45_60_bonus: 0.30
+    salary_sr_ex_bonus: 0.25
+    seminar_attended_bonus: 0.40
+    high_portal_usage_bonus: 0.20
+    female_bonus: 0.05
+    high_portal_login_threshold: 5
+    max_probability: 0.95
+  within_window_rate: 0.70
+  open_option_rate: 0.30
+  open_option_premium_range: [0.40, 0.60]
+  payment_method:
+    LUMP_SUM: 0.40
+    INSTALLMENT: 0.60
+  installment_months_options:
+    within_window: [12, 24, 36, 60, 123]
+    open_option: [12, 24, 36, 48, 60]
+  chain_outcomes:
+    normal: 0.85
+    rejected: 0.05
+    cancelled: 0.03
+    abandoned: 0.07
+
+engagement:
+  portal_login_per_year: 3.5
+  statement_view_per_year: 1.2
+  pension_calculator_use_per_year: 0.8
+  buyback_quote_request_per_year: 0.15
+  seminar_attendance_rate_per_year: 0.08
+  call_center_contact_per_year: 0.6
+  email_open_per_year: 4.0
+  advisor_meeting_per_year: 0.05
+
+history:
+  life_events_months: 24
+  transactions_months: 3
+  portal_events_months: 3
+  call_logs_months: 3
+  email_engagement_months: 3
+  seminar_attendance_years: 2
+  member_census_snapshots: 2
