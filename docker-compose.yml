@@ -1,0 +1,79 @@
+# docker-compose.yml — orchestrates the dev environment for pension-project.
+# Run with:  docker compose up -d
+# Stop with: docker compose down
+
+services:
+
+  # ============================================================
+  # PostgreSQL database
+  # ============================================================
+  postgres:
+    image: postgres:16
+    container_name: pension-postgres
+    restart: unless-stopped
+
+    # Read credentials from .env file (in same directory as this compose file)
+    env_file:
+      - .env
+
+    # Postgres needs these env vars at startup to initialize the cluster
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+
+    # Expose port 5432 to your Mac so DBeaver/TablePlus can connect.
+    # Format: "host_port:container_port"
+    ports:
+      - "5432:5432"
+
+    # Persist database files to a named volume.
+    # Even if the container is deleted, data survives in this volume.
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    # Healthcheck so other services can wait until postgres is actually ready
+    # (it takes a few seconds after the container starts to accept connections).
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ============================================================
+  # Python application container
+  # ============================================================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pension-app
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    # Wait until postgres is healthy before starting app
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    # Mount the project directory into the container at /app.
+    # Edits on your Mac are instantly visible inside the container — no rebuild needed.
+    volumes:
+      - .:/app
+
+    # Expose Jupyter port (we'll use this in later weeks)
+    ports:
+      - "8888:8888"
+
+    # Keep the container running idle. We'll `docker compose exec app bash`
+    # to drop into it whenever we want to run scripts.
+    command: tail -f /dev/null
+
+# ============================================================
+# Named volumes (managed by Docker, persist across container rebuilds)
+# ============================================================
+volumes:
+  postgres_data:
+    name: pension_postgres_data
