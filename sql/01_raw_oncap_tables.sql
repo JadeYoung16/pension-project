@@ -92,3 +92,39 @@ CREATE TABLE IF NOT EXISTS raw_oncap.member_census (
     _row_num                        BIGINT      NOT NULL,
     _loaded_at                      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+
+-- -----------------------------------------------------------------------------
+-- Table 3: member_census_control  ←  HDR + TRL records from the same .DAT file
+-- -----------------------------------------------------------------------------
+-- HDR (header) and TRL (trailer) records carry file-level metadata and
+-- reconciliation info (record counts, salary sums, checksums).
+-- Stored in one table with record_kind = 'HDR' | 'TRL' to distinguish.
+-- Naming exception: source field is RECORD_TYPE; we use `record_kind` here
+-- to avoid clashing with the same-named field in detail records. 
+-- Most queries will GROUP BY _source_file to compare HDR.record_count vs
+-- actual count of detail rows in member_census — that's the dbt test we'll
+-- write in Week 4.
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS raw_oncap.member_census_control (
+    record_kind                 TEXT,           -- 'HDR' or 'TRL'(Renamed from source RECORD_TYPE as we have the same column name in member_census.record_type)
+    plan_code                   TEXT,           -- HDR only
+    as_of_date                  DATE,           -- both
+    record_count                INTEGER,        -- HDR.RECORD_COUNT or TRL.TOTAL_RECORD_COUNT
+    create_timestamp            TIMESTAMP,      -- HDR only
+    layout_version              TEXT,           -- HDR only
+    system_id                   TEXT,           -- HDR only
+    -- TRL-only fields (member status counts)
+    active_count                INTEGER,
+    deferred_count              INTEGER,
+    retired_count               INTEGER,
+    terminated_count            INTEGER,
+    survivor_count              INTEGER,
+    -- TRL-only reconciliation totals
+    sum_annual_salary           NUMERIC(18, 2),
+    sum_accrued_pension         NUMERIC(18, 2),
+    checksum                    TEXT,
+    -- audit
+    _source_file                TEXT        NOT NULL,
+    _loaded_at                  TIMESTAMPTZ NOT NULL DEFAULT now()  -- we don't use it with time zone as the raw data doesn't have time zone
+);
