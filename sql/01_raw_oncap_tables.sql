@@ -220,3 +220,35 @@ CREATE TABLE IF NOT EXISTS raw_oncap.life_event (
     _row_num                         BIGINT NOT NULL,
     _loaded_at                       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+
+-- -----------------------------------------------------------------------------
+-- Table 7: portal_event  ←  ONCAP001_PORTAL_EVENTS_YYYYMMDD.jsonl
+-- -----------------------------------------------------------------------------
+-- JSONL format (one JSON object per line), UTF-8.  Approximately 90 daily
+-- files covering the observation window.
+--
+-- Hybrid typing: scalar top-level fields are unpacked into typed columns for
+-- easy querying; the nested `event_properties` object stays as JSONB because
+-- its shape varies by event_type.  This mirrors how Fivetran/Airbyte and
+-- modern warehouses (Snowflake VARIANT, BigQuery STRUCT) handle event data.
+--
+-- The loader will also handle ~1-in-10k malformed JSON lines (per spec) by
+-- routing them to raw_oncap._rejected (Week 3 loader task).
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS raw_oncap.portal_event (
+    event_id                    TEXT,
+    member_id                   TEXT,
+    event_timestamp             TIMESTAMPTZ,
+    event_type                  TEXT,
+    session_id                  TEXT,
+    ip_hash                     TEXT,
+    user_agent                  TEXT,
+    page_path                   TEXT,
+    referrer                    TEXT,
+    event_properties            JSONB,
+    -- audit
+    _source_file                TEXT        NOT NULL,
+    _row_num                    BIGINT      NOT NULL,
+    _loaded_at                  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
