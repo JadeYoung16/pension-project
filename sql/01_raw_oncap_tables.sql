@@ -185,3 +185,38 @@ CREATE TABLE IF NOT EXISTS raw_oncap.transaction_control (
     _source_file                TEXT        NOT NULL,
     _loaded_at                  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+
+-- -----------------------------------------------------------------------------
+-- Table 6: life_event  ←  ONCAP001_LIFE_EVENTS_YYYYMM.TXT (or similar)
+-- -----------------------------------------------------------------------------
+-- Pipe-delimited, UTF-8.  Polymorphic events — different event_type_code
+-- values use different subsets of fields, so most non-key columns are
+-- nullable in raw.
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS raw_oncap.life_event (
+    event_id                         TEXT,
+    member_id                        TEXT,
+    employer_id                      TEXT,
+    event_type_code                  TEXT,
+    event_date                       DATE,
+    event_timestamp                  TIMESTAMPTZ,
+    buyback_category_code            TEXT,
+    buyback_service_years            NUMERIC(7,2),
+    leave_end_date                   DATE,
+    months_since_eligibility         INTEGER,
+    is_within_window                 TEXT,
+    is_open_option                   TEXT,
+    member_cost                      NUMERIC(12,2),
+    employer_cost                    NUMERIC(12,2),
+    total_cost                       NUMERIC(12,2),
+    payment_method                   TEXT,
+    installment_months               INTEGER,
+    event_status                     TEXT,
+    channel_code                     TEXT,
+    notes                            TEXT,
+    -- audit line 
+    _source_file                     TEXT   NOT NULL,
+    _row_num                         BIGINT NOT NULL,
+    _loaded_at                       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
