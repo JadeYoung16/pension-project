@@ -128,3 +128,60 @@ CREATE TABLE IF NOT EXISTS raw_oncap.member_census_control (
     _source_file                TEXT        NOT NULL,
     _loaded_at                  TIMESTAMPTZ NOT NULL DEFAULT now()  -- we don't use it with time zone as the raw data doesn't have time zone
 );
+
+
+-- -----------------------------------------------------------------------------
+-- Table 4: transaction  ←  ONCAP001_TXN_PAYDATE_YYYYMMDD.TXT
+-- -----------------------------------------------------------------------------
+-- Pipe-delimited text, UTF-8.  File structure:
+--   Line 1:        H|ONCAP001|TXN|<pay_date>|<record_count>|<create_ts>
+--   Line 2:        column header row (skipped by loader)
+--   Lines 3..N-1:  detail records (loaded into this table)
+--   Line N:        T|ONCAP001|<record_count>|<sum_mbr>|<sum_emp>
+--
+-- Money columns use NUMERIC(12, 2), matching annual_salary precision in
+-- member_census for cross-table consistency.
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS raw_oncap.transaction (
+    transaction_id              TEXT,
+    member_id                   TEXT,
+    employer_id                 TEXT,
+    pay_date                    DATE,
+    pay_period_start            DATE,
+    pay_period_end              DATE,
+    pay_frequency_code          TEXT,
+    pensionable_earnings        NUMERIC(12, 2),
+    member_contribution         NUMERIC(12, 2),
+    employer_contribution       NUMERIC(12, 2),
+    contribution_type           TEXT,
+    buyback_reference_id        TEXT,
+    transaction_status          TEXT,
+    -- audit
+    _source_file                TEXT        NOT NULL,
+    _row_num                    BIGINT      NOT NULL,
+    _loaded_at                  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+
+-- -----------------------------------------------------------------------------
+-- Table 5: transaction_control  ←  H + T records from the same .TXT file
+-- -----------------------------------------------------------------------------
+-- Header (H) and trailer (T) records carry file-level metadata + reconciliation
+-- totals.  One row each per source file — small volume.
+--
+-- Naming exception: source field is "record_type" (the leading H or T);
+-- we use `record_kind` here to stay consistent with member_census_control.
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS raw_oncap.transaction_control (
+    record_kind                 TEXT,           -- 'H' or 'T'
+    plan_code                   TEXT,           -- both
+    file_type                   TEXT,           -- H only ('TXN')
+    pay_date                    DATE,           -- H only
+    record_count                INTEGER,        -- both (H declares, T confirms)
+    create_timestamp            TIMESTAMPTZ,    -- H only; ISO 8601 with TZ in source, so TIMESTAMPTZ
+    sum_member_contribution     NUMERIC(18, 2), -- T only
+    sum_employer_contribution   NUMERIC(18, 2), -- T only
+    -- audit
+    _source_file                TEXT        NOT NULL,
+    _loaded_at                  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
