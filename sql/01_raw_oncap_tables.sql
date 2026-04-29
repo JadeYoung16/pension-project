@@ -299,3 +299,25 @@ CREATE TABLE IF NOT EXISTS raw_oncap.seminar_attendance (
     _row_num                         BIGINT NOT NULL,
     _loaded_at                       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- -----------------------------------------------------------------------------
+-- Table 10: email_engagement  ←  ONCAP001_EMAIL_ENGAGEMENT_YYYYMM.csv
+-- -----------------------------------------------------------------------------
+-- CSV format.  2023-NOV to 2024-JAN
+-- -----------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS raw_oncap.email_engagement (
+    event_id                         TEXT,
+    member_id                        TEXT,
+    campaign_id                      TEXT,
+    campaign_name                    TEXT,
+    event_type                       TEXT,
+    event_timestamp                  TIMESTAMPTZ,
+    link_url_clicked                 TEXT,
+    -- audit
+    _source_file                     TEXT NOT NULL,
+    _row_num                         BIGINT NOT NULL,
+    _loaded_at                       TIMESTAMPTZ NOT NULL DEFAULT now()
+
+);
+
