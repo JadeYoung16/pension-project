@@ -278,3 +278,24 @@ CREATE TABLE IF NOT EXISTS raw_oncap.call_log (
     _loaded_at                       TIMESTAMPTZ NOT NULL DEFAULT now()
 
 );
+
+
+-- -----------------------------------------------------------------------------
+-- Table 9: seminar_attendance  ←  ONCAP001_SEMINAR_ATTENDANCE_YYYY.csv
+-- -----------------------------------------------------------------------------
+-- CSV format.  2022 and 2023
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS raw_oncap.seminar_attendance (
+    attendance_id                    TEXT,
+    member_id                        TEXT,
+    seminar_date                     DATE,
+    seminar_location                 TEXT,
+    seminar_topic                    TEXT,
+    attendance_format                TEXT,
+    registration_date                DATE,
+    attended_flag                    TEXT,
+    -- audit
+    _source_file                     TEXT NOT NULL,
+    _row_num                         BIGINT NOT NULL,
+    _loaded_at                       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
