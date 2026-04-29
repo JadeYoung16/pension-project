@@ -252,3 +252,29 @@ CREATE TABLE IF NOT EXISTS raw_oncap.portal_event (
     _row_num                    BIGINT      NOT NULL,
     _loaded_at                  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+
+
+-- -----------------------------------------------------------------------------
+-- Table 8: call_log  ←  ONCAP001_CALL_LOG_YYYYMM.csv
+-- -----------------------------------------------------------------------------
+-- CSV format.  2023-11 to 2024-01
+-- -----------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS raw_oncap.call_log (
+    call_id                          TEXT,
+    member_id                        TEXT,
+    call_timestamp                   TIMESTAMPTZ,
+    duration_seconds                 INTEGER,
+    call_reason_category             TEXT,
+    call_reason_subcategory          TEXT,
+    resolution_code                  TEXT,
+    agent_id                         TEXT,
+    csat_score                       INTEGER,
+    notes                            TEXT,
+    -- audit
+    _source_file                     TEXT NOT NULL,
+    _row_num                         BIGINT NOT NULL,
+    _loaded_at                       TIMESTAMPTZ NOT NULL DEFAULT now()
+
+);
