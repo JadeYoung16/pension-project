@@ -321,3 +321,27 @@ CREATE TABLE IF NOT EXISTS raw_oncap.email_engagement (
 
 );
 
+
+
+
+-- -----------------------------------------------------------------------------
+-- Table 10: _rejected  ←  raw_oncap._rejected
+-- -----------------------------------------------------------------------------
+-- Quarantine table for rows that fail to parse during loading.
+-- Loader writes here instead of raising; the run continues.
+-- -----------------------------------------------------------------------------
+
+
+CREATE TABLE raw_oncap._rejected (
+    rejected_id     BIGSERIAL PRIMARY KEY,
+    target_table    TEXT        NOT NULL,
+    source_file     TEXT        NOT NULL,
+    row_num         BIGINT      NOT NULL,
+    raw_line        TEXT        NOT NULL,
+    failure_reason  TEXT        NOT NULL,
+    failure_detail  TEXT,
+    rejected_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_rejected_target_table ON raw_oncap._rejected (target_table);
+CREATE INDEX idx_rejected_rejected_at  ON raw_oncap._rejected (rejected_at);
