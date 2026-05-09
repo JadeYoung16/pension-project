@@ -16,36 +16,33 @@ Naming: the leading underscore in `_db.py` is a Python convention meaning
 import csv
 import io
 from pathlib import Path
+from loaders._config import TableConfig
 
 import psycopg2
 
 
-def load_csv_to_table(
-    source_dir: Path,
-    target_table: str,
-    columns: list[str],
-) -> None:
+def load_csv_to_table(cfg: TableConfig) -> None:
     """TRUNCATE target_table, then bulk-load every CSV in source_dir via COPY."""
-    csv_files = sorted(source_dir.glob("*.csv"))
+    csv_files = sorted(cfg.source_dir.glob("*.csv"))
     if not csv_files:
-        raise SystemExit(f"No CSV files found in {source_dir}")
+        raise SystemExit(f"No CSV files found in {cfg.source_dir}")
 
     conn = psycopg2.connect()  # reads PG* env vars
     try:
         with conn.cursor() as cur:
-            cur.execute(f"TRUNCATE TABLE {target_table};")
+            cur.execute(f"TRUNCATE TABLE {cfg.target_table};")
 
             for csv_path in csv_files:
                 buffer = _build_buffer(csv_path)
                 copy_sql = (
-                    f"COPY {target_table} ({', '.join(columns)}) "
+                    f"COPY {cfg.target_table} ({', '.join(cfg.columns)}) "
                     f"FROM STDIN WITH (FORMAT csv)"
                 )
                 cur.copy_expert(copy_sql, buffer)
                 print(f"  loaded {csv_path.name}")
 
         conn.commit()
-        print(f"OK — committed load of {target_table}")
+        print(f"OK — committed load of {cfg.target_table}")
     finally:
         conn.close()
 
