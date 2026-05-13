@@ -7,7 +7,7 @@ Usage:
 import argparse
 
 from loaders._config import TABLES
-from loaders._db import load_csv_to_table
+from loaders._db import load_to_table
 
 
 def main() -> None:
@@ -42,4 +42,4 @@ def _run_load(args: argparse.Namespace) -> None:
     targets = list(TABLES.keys()) if args.all else [args.name]
     for name in targets:
         print(f"=== loading {name} ===")
-        load_csv_to_table(TABLES[name])
+        load_to_table(TABLES[name])

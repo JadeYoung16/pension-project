@@ -15,31 +15,46 @@ Naming: the leading underscore in `_db.py` is a Python convention meaning
 
 import csv
 import io
+from collections.abc import Iterator
 from pathlib import Path
-from loaders._config import TableConfig
 
 import psycopg2
 
+from loaders._config import TableConfig
+from loaders._formats import csv_format, pipe_format
 
-def load_csv_to_table(cfg: TableConfig) -> None:
-    """TRUNCATE target_table, then bulk-load every CSV in source_dir via COPY."""
-    csv_files = sorted(cfg.source_dir.glob("*.csv"))
-    if not csv_files:
-        raise SystemExit(f"No CSV files found in {cfg.source_dir}")
+
+FORMATS = {
+    "csv": csv_format,
+    "pipe": pipe_format,
+}
+
+
+def load_to_table(cfg: TableConfig) -> None:
+    """TRUNCATE target_table, then bulk-load every source file via COPY."""
+    files = sorted(cfg.source_dir.glob(cfg.file_glob))
+    if not files:
+        raise SystemExit(
+            f"No files matching {cfg.file_glob} found in {cfg.source_dir}"
+        )
+
+    all_columns = cfg.source_columns + ("_source_file", "_row_num")
+    copy_sql = (
+        f"COPY {cfg.target_table} ({', '.join(all_columns)}) "
+        f"FROM STDIN WITH (FORMAT csv)"
+    )
+    parser = FORMATS[cfg.format]
 
     conn = psycopg2.connect()  # reads PG* env vars
     try:
         with conn.cursor() as cur:
             cur.execute(f"TRUNCATE TABLE {cfg.target_table};")
 
-            for csv_path in csv_files:
-                buffer = _build_buffer(csv_path)
-                copy_sql = (
-                    f"COPY {cfg.target_table} ({', '.join(cfg.columns)}) "
-                    f"FROM STDIN WITH (FORMAT csv)"
-                )
+            for path in files:
+                rows = parser.read_rows(path, cfg.source_columns)
+                buffer = _build_buffer(path, rows)
                 cur.copy_expert(copy_sql, buffer)
-                print(f"  loaded {csv_path.name}")
+                print(f"  loaded {path.name}")
 
         conn.commit()
         print(f"OK — committed load of {cfg.target_table}")
@@ -47,16 +62,11 @@ def load_csv_to_table(cfg: TableConfig) -> None:
         conn.close()
 
 
-def _build_buffer(csv_path: Path) -> io.StringIO:
-    """Read CSV, append _source_file and _row_num to each row, return as buffer."""
+def _build_buffer(path: Path, rows: Iterator[list[str]]) -> io.StringIO:
+    """Add _source_file/_row_num enrichment to each row; return as csv buffer."""
     buffer = io.StringIO()
     writer = csv.writer(buffer)
-
-    with csv_path.open("r", newline="") as f:
-        reader = csv.reader(f)
-        next(reader)  # skip header
-        for row_num, row in enumerate(reader, start=1):
-            writer.writerow(row + [csv_path.name, row_num])
-
+    for row_num, row in enumerate(rows, start=1):
+        writer.writerow(row + [path.name, row_num])
     buffer.seek(0)
     return buffer
