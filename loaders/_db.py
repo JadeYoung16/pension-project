@@ -21,12 +21,13 @@ from pathlib import Path
 import psycopg2
 
 from loaders._config import TableConfig
-from loaders._formats import csv_format, pipe_format
+from loaders._formats import csv_format, pipe_format, fixed_width_format
 
 
 FORMATS = {
     "csv": csv_format,
     "pipe": pipe_format,
+    "fixed_width": fixed_width_format,
 }
 
 
@@ -49,9 +50,13 @@ def load_to_table(cfg: TableConfig) -> None:
     try:
         with conn.cursor() as cur:
             cur.execute(f"TRUNCATE TABLE {cfg.target_table};")
-
             for path in files:
-                rows = parser.read_rows(path, cfg.source_columns)
+                if cfg.field_positions is not None:
+                    rows = parser.read_rows(
+                        path, cfg.source_columns, cfg.field_positions, cfg.field_types
+                    )
+                else:
+                    rows = parser.read_rows(path, cfg.source_columns)
                 buffer = _build_buffer(path, rows)
                 cur.copy_expert(copy_sql, buffer)
                 print(f"  loaded {path.name}")
