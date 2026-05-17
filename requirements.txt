@@ -10,5 +10,12 @@ python-dateutil==2.9.0
 psycopg2-binary==2.9.10
 sqlalchemy==2.0.36
 
+# Snowflake 
+snowflake-connector-python[pandas]==3.12.3
+pyarrow==16.1.0
+
+# Config
+python-dotenv==1.0.1
+
 # Notebooks (for exploration)
 jupyterlab==4.3.4
