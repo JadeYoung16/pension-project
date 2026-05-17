@@ -42,19 +42,19 @@ employers:
     - name: LARGE
       count: 20
       employee_count_range: [500, 20000]
-      members_per_employer_avg: 1800      # was 1000
+      members_per_employer_avg: 1800
     - name: MEDIUM
       count: 60
       employee_count_range: [100, 499]
-      members_per_employer_avg: 150       # was 250
+      members_per_employer_avg: 150
     - name: SMALL
       count: 150
       employee_count_range: [20, 99]
-      members_per_employer_avg: 30        # was 80
+      members_per_employer_avg: 30
     - name: MICRO
       count: 170
       employee_count_range: [5, 19]
-      members_per_employer_avg: 3         # was 17
+      members_per_employer_avg: 3
 
   pay_frequency_distribution:
     BW: 0.60
@@ -65,6 +65,35 @@ employers:
   status_distribution:
     ACTIVE: 0.95
     WITHDRAWN: 0.05
+
+  # --- Acquisition funnel attributes (added Week 4) ---
+  # Channel = how the employer was acquired (touch type)
+  # Source  = where the lead originated (lead origin)
+  # Kept independent on purpose — overlap mirrors reality.
+  acquisition_channel_distribution:
+    outbound:    0.45
+    referral:    0.25
+    inbound:     0.15
+    event:       0.10
+    partnership: 0.05
+
+  prospect_source_distribution:
+    t3010_outbound_list:        0.40
+    referral_existing_employer: 0.20
+    conference:                 0.15
+    broker:                     0.10
+    inbound_web:                0.10
+    chamber_of_commerce:        0.05
+
+  # Sales cycle: first_contact_date is participation_start_date minus a
+  # channel-driven number of days. Stored implicitly via first_contact_date;
+  # mart layer computes sales_cycle_days = participation_start - first_contact.
+  sales_cycle_days_by_channel:
+    inbound:     [30, 120]
+    referral:    [60, 240]
+    outbound:    [120, 540]
+    event:       [90, 365]
+    partnership: [60, 300]
 
 members:
   total_count: 50000

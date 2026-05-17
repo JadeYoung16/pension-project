@@ -12,6 +12,8 @@ Why this design:
   - Size bands reflect realistic non-profit employer distribution
   - Member count allocation per employer → sums exactly to target (50,000)
   - Pay frequency assignment is independent of size band (random)
+  - Acquisition attributes (channel/source/first_contact_date) support the
+    upper-funnel employer-acquisition mart in Week 6 (see project plan §7.6).
 
 Dependencies:
   - data/raw_external/cra_t3010_2023/ident_2023_ontario.csv
@@ -91,6 +93,10 @@ OUTPUT_COLUMNS = [
     "plan_administrator_name",
     "plan_administrator_email",
     "status",
+    # Acquisition funnel attributes (Week 4)
+    "acquisition_channel",
+    "prospect_source",
+    "first_contact_date",
 ]
 
 
@@ -147,6 +153,9 @@ class GenerationStats:
     per_band_member_count: dict[str, int] = field(default_factory=dict)
     pay_frequency_counts: dict[str, int] = field(default_factory=dict)
     total_enrolled_members: int = 0
+    # Acquisition stats (Week 4)
+    acquisition_channel_counts: dict[str, int] = field(default_factory=dict)
+    prospect_source_counts: dict[str, int] = field(default_factory=dict)
 
 
 # -----------------------------------------------------------------------------
@@ -571,6 +580,46 @@ def pick_status(config: dict, rng: random.Random) -> str:
     return weighted_choice(config["employers"]["status_distribution"], rng)
 
 
+def pick_acquisition_channel(config: dict, rng: random.Random) -> str:
+    """Pick how the employer was acquired (touch type)."""
+    return weighted_choice(
+        config["employers"]["acquisition_channel_distribution"], rng
+    )
+
+
+def pick_prospect_source(config: dict, rng: random.Random) -> str:
+    """Pick where the lead originated (lead source)."""
+    return weighted_choice(
+        config["employers"]["prospect_source_distribution"], rng
+    )
+
+
+def pick_first_contact_date(
+    participation_start: date,
+    channel: str,
+    config: dict,
+    rng: random.Random,
+) -> date:
+    """
+    Pick first_contact_date = participation_start - sales_cycle_days,
+    where sales_cycle_days is drawn from a channel-specific range.
+
+    Channel drives sales cycle length: inbound is short (already interested),
+    outbound is long (cold start). This gives Week 6 mart layer a real signal
+    to slice funnel velocity by channel.
+
+    Guards against pre-plan-start dates only if the participation date is
+    very early; we don't clamp here because some early prospects legitimately
+    had multi-year cycles. The mart layer can flag any anomalies.
+    """
+    cycle_range = config["employers"]["sales_cycle_days_by_channel"].get(
+        channel, [60, 365]
+    )
+    lo, hi = int(cycle_range[0]), int(cycle_range[1])
+    days = rng.randint(lo, hi)
+    return participation_start - timedelta(days=days)
+
+
 def make_administrator_email(name: str, operating_name: str) -> str:
     """Synthesize a plan_administrator_email."""
     # Normalize name to first.last format
@@ -685,6 +734,17 @@ def generate(
             admin_name = fake.name()
             admin_email = make_administrator_email(admin_name, row.operating_name)
 
+            # Acquisition attributes (Week 4)
+            channel = pick_acquisition_channel(config, rng)
+            source = pick_prospect_source(config, rng)
+            first_contact = pick_first_contact_date(start_date, channel, config, rng)
+            stats.acquisition_channel_counts[channel] = (
+                stats.acquisition_channel_counts.get(channel, 0) + 1
+            )
+            stats.prospect_source_counts[source] = (
+                stats.prospect_source_counts.get(source, 0) + 1
+            )
+
             w.write_row({
                 "employer_id": generate_employer_id(seq),
                 "business_number": row.bn,
@@ -701,6 +761,9 @@ def generate(
                 "plan_administrator_name": admin_name,
                 "plan_administrator_email": admin_email,
                 "status": pick_status(config, rng),
+                "acquisition_channel": channel,
+                "prospect_source": source,
+                "first_contact_date": first_contact.isoformat(),
             })
 
     logger.info("Output written: %s", output_path)
@@ -739,6 +802,22 @@ def print_summary(stats: GenerationStats) -> None:
         count = stats.pay_frequency_counts.get(freq, 0)
         pct = count / total * 100 if total else 0
         print(f"  {freq}: {count:>5,} ({pct:5.1f}%)")
+
+    print()
+    print("Acquisition channel distribution:")
+    total_ch = sum(stats.acquisition_channel_counts.values())
+    for ch in sorted(stats.acquisition_channel_counts.keys()):
+        count = stats.acquisition_channel_counts[ch]
+        pct = count / total_ch * 100 if total_ch else 0
+        print(f"  {ch:<12}: {count:>5,} ({pct:5.1f}%)")
+
+    print()
+    print("Prospect source distribution:")
+    total_src = sum(stats.prospect_source_counts.values())
+    for src in sorted(stats.prospect_source_counts.keys()):
+        count = stats.prospect_source_counts[src]
+        pct = count / total_src * 100 if total_src else 0
+        print(f"  {src:<28}: {count:>5,} ({pct:5.1f}%)")
 
 
 # -----------------------------------------------------------------------------
