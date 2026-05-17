@@ -67,8 +67,8 @@ def read_rows(
     expected_columns: tuple[str, ...],
     field_positions: tuple[tuple[int, int], ...],
     field_types: tuple[str, ...],
-) -> Iterator[list[str]]:
-    """Yield one list[str] per data row, with per-field reformatting applied.
+) -> Iterator[tuple[str, dict]]:
+    """Yield one (tag, payload) tuple per data row.
 
     Args:
         path: file to read.
@@ -103,8 +103,8 @@ def read_rows(
 
     # ISO-8859-1 to handle accented names (Müller, François).
     with open(path, "r", encoding="latin-1") as f:
-        for line in f:
-            line = line.rstrip("\r\n")
+        for line_num, raw_line in enumerate(f, start=1):
+            line = raw_line.rstrip("\r\n")
             record_type = line[0:3]
 
             if record_type == "HDR":
@@ -114,7 +114,8 @@ def read_rows(
                 # TODO(checksum): 3.6 will verify record_count + SHA256 hash
                 continue
             if record_type == "001":
-                yield [fmt(line[s]) for s, fmt in zip(slices, formatters)]
+                values = [fmt(line[s]) for s, fmt in zip(slices, formatters)]
+                yield ("good", {"row_num": line_num, "values": values})
                 continue
 
             raise ValueError(
