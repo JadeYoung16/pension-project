@@ -35,6 +35,9 @@ CREATE TABLE IF NOT EXISTS raw_oncap.employer_registry (
     plan_administrator_name          TEXT,
     plan_administrator_email         TEXT,
     status                           TEXT,
+    acquisition_channel              TEXT,
+    prospect_source                  TEXT,
+    first_contact_date               DATE,
     -- audit columns
     _source_file                     TEXT   NOT NULL,
     _row_num                         BIGINT NOT NULL,
@@ -345,3 +348,43 @@ CREATE TABLE raw_oncap._rejected (
 
 CREATE INDEX idx_rejected_target_table ON raw_oncap._rejected (target_table);
 CREATE INDEX idx_rejected_rejected_at  ON raw_oncap._rejected (rejected_at);
+
+
+-- -----------------------------------------------------------------------------
+-- Meta-table: _load_audit  (Week 4 Day 3)
+-- -----------------------------------------------------------------------------
+-- One row per load_to_table() invocation. Captures success/failure, row
+-- counts, per-file breakdown, and timing. Owned by raw_oncap schema (same
+-- home as _rejected) — both are loader-managed quarantine/audit data.
+--
+-- Logged on BOTH success and failure paths. Written via a separate
+-- connection so that a failed load (which rolls back the target table's
+-- transaction) still leaves an audit trail behind.
+--
+-- target_table column stores the FULLY-QUALIFIED name (e.g.
+-- 'raw_external.t3010_ident') so a single audit table covers all schemas.
+--
+-- source_files is a JSONB array of {name, rows_good, rows_rejected}.
+-- Array form preserves per-file detail (e.g. for "which day had the most
+-- rejects" queries) without needing a separate normalized table.
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS raw_oncap._load_audit (
+    load_id            BIGSERIAL    PRIMARY KEY,
+    target_table       TEXT         NOT NULL,
+    started_at         TIMESTAMPTZ  NOT NULL,
+    finished_at        TIMESTAMPTZ  NOT NULL,
+    status             TEXT         NOT NULL CHECK (status IN ('success', 'failed')),
+    files_loaded       INTEGER      NOT NULL,
+    rows_good          BIGINT       NOT NULL,
+    rows_rejected      BIGINT       NOT NULL,
+    source_files       JSONB        NOT NULL,
+    failure_reason     TEXT,
+    _created_at        TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+ 
+CREATE INDEX IF NOT EXISTS idx_load_audit_table_time
+    ON raw_oncap._load_audit (target_table, started_at DESC);
+ 
+COMMENT ON TABLE raw_oncap._load_audit IS
+    'One row per loader invocation. Logs success/failure, row counts, per-file detail. Written in separate transaction from data load.';
+ 
