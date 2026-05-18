@@ -125,3 +125,58 @@ Week 5 起 loader 不再修改,作为上游基础设施服务下游 dbt/Snowflak
 - 14 张表全量过一遍
 - Snowflake stage 类型选择:internal named stage vs user stage vs table stage
 - ON_ERROR 策略 + 是否同步写 _rejected / _load_audit
+
+## 2026-05-17 — Week 4 Day 5(上半段)
+
+按计划 Day 5 = 5/18,Day 4 同日(5/17)收口后直接接 Day 5。Day 5 工作量预估
+4.5h,今天只完成约 2.5h,COPY INTO 整段(Step 4 起)留明天。
+
+**Done:**
+- Day 5 4 个设计点全部拍板:
+  1. Stage = named internal, 共享 + 子目录分表
+  2. File format = 3 个(CSV/PIPE/JSON),fixed-width 走选项 (a) Python 预处理
+  3. ON_ERROR = CONTINUE,Day 5 不写自定义 _rejected/_load_audit,先用
+     Snowflake 内置 COPY_HISTORY 当 ground truth,自定义留 Day 6+ 时间富裕再补
+  4. Transaction T 行处理倾向 (a) 本地预处理拆 detail/control 两 csv,
+     和 fixed-width 同思路;但 Day 5 时间紧时可用 (c) 先 ON_ERROR=CONTINUE
+     跳过 T 行,control 表后补
+- sql/snowflake/03_stage_and_formats.sql:LOAD_STAGE + 3 file format
+- loaders/snowflake/__init__.py + test_connection.py + put_files.py
+- PUT 144 文件到 stage(transaction 18 + life_event 24 + portal_event 91 +
+  4 个 csv 系列 = 144,member_census 2 个 .DAT 暂跳)
+
+**Stuck:**
+- `.env` 改完密码 / role / database 不生效。原因:`docker compose restart`
+  不重读 env_file,**必须 `down + up`**。教训:Postgres loader 全程没遇到
+  过这个,因为 PG 凭证从一开始就稳定;Snowflake 是第一次需要改 .env,
+  踩到了。下次改 .env 直接 down+up,不试 restart。
+- `.env` 里残留 5/10 学习项目的旧值(PENSION_DW / COMPUTE_WH /
+  ACCOUNTADMIN),改 .env 时一次性清掉。教训:.env 是单一真相源,
+  老配置不及时清就会变干扰。
+
+**Security incident:**
+- Day 5 中段 sanity 检查 `docker compose exec app env` 时**密码明文贴出**。
+  对话即使私密也算泄露;Snowsight 已重置密码,.env 同步更新。今后贴 env
+  输出统一加 `sed 's/PASSWORD=.*/PASSWORD=***REDACTED***/'`。
+
+**Design notes:**
+- PUT 单条支持 glob,91 个 jsonl 一条 PUT 而非 91 次循环,Snowflake 客户端
+  内部 PARALLEL=4 并发。预期对大表(transaction / portal_event)上传时间
+  从分钟降到秒。
+- METADATA$FILENAME + METADATA$FILE_ROW_NUMBER 是 Snowflake 原生 stage
+  metadata 函数,COPY INTO 里直接当审计列写入,完全免去 Postgres loader
+  那种"Python 拼接 _source_file/_row_num 进 StringIO"的胶水。Day 5 第一
+  张表的 COPY 模板用 SELECT $1..$N + METADATA$* 一次跑通,剩下 13 表照搬。
+
+**Next (Day 5 下半段, 5/18):**
+- Step 4: COPY INTO employer_registry(最小表,验证模板)
+- Step 4b: 剩下 9 张 csv/pipe/jsonl 表 COPY INTO
+- Step 5: member_census 预处理脚本(复用 fixed_width_format.py)→ csv → PUT → COPY INTO
+- Step 6: T3010 两表 COPY INTO
+- Step 7: 全表 row count 对账(Snowflake vs Postgres 14 表)
+- Step 8: commit + progress log
+- 不挪用 buffer 的话,Day 5 全部完成 = 5/18 全天
+
+**Open question 留明天决定:**
+- transaction T 行走 (a) 还是 (c)?Day 5 头部时间充裕走 (a),时间紧再降到 (c)
+- _rejected / _load_audit 在 Snowflake 这边什么时候补?Day 6 (dbt 起跑前)还是 Day 7+?
