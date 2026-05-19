@@ -180,3 +180,67 @@ Week 5 起 loader 不再修改,作为上游基础设施服务下游 dbt/Snowflak
 **Open question 留明天决定:**
 - transaction T 行走 (a) 还是 (c)?Day 5 头部时间充裕走 (a),时间紧再降到 (c)
 - _rejected / _load_audit 在 Snowflake 这边什么时候补?Day 6 (dbt 起跑前)还是 Day 7+?
+
+## 2026-05-18 — Week 4 Day 5(下半段)
+
+承接昨天 Day 5 上半段(stage + put 完成)。今天目标:Step 4-7 跑完
+(COPY INTO 14 张表 + 对账)。实际完成 8/14 + 部分对账,余 2 张 t3010 表
++ 完整对账,留明天 5/19 收尾。
+
+**Done:**
+- Step 4: employer_registry COPY INTO 模板验证(400 行,跟 Postgres 一致)
+- Step 4b 完成 6 张表:
+  - call_log (4,122) / seminar_attendance (5,816) / email_engagement (227,502)
+  - life_event (17,638, SKIP_HEADER=1)
+  - transaction (186,865, SKIP_HEADER=2, ON_ERROR=CONTINUE 跳 T 行)
+  - portal_event (58,537 ≠ Postgres 59,606,详 Known issue)
+- Step 5: member_census 预处理 + PUT + COPY INTO 通(100,000 行)
+- 8/14 表对账与 Postgres 一致
+
+**Known issue: portal_event 行数差异**
+- Postgres raw_oncap.portal_event: 59,606
+- Snowflake RAW_ONCAP.PORTAL_EVENT: 58,537(差 1,069 = 1.8%)
+- 原因:Snowflake TYPE=JSON parser 容错粒度是**文件级**,
+  ON_ERROR=CONTINUE 遇到 malformed JSON 时跳过整个文件剩余行,而不是
+  Postgres jsonl_format.py 那种行级 reject。5 个文件 partially loaded,
+  每个 error_count=1,但累计丢了 ~1069 行。
+- 影响评估:raw 层不完整;mart 层(member-month 聚合)受影响极小。
+- 修法:Day 6 用 TRY_PARSE_JSON 实现行级 reject(整文件读为 STRING,
+  WHERE TRY_PARSE_JSON IS NOT NULL 过滤再 INSERT)。Day 5 不补,推进
+  member_census 优先。
+
+**Stuck/lessons:**
+- ON_ERROR=CONTINUE 行为**因 file format 而异**:CSV/PIPE 是行级
+  reject,JSON 是文件级。Snowflake 文档对此不显式。教训:多 format 项目
+  里 raw 层完整性必须**按格式分别验证**,不能假设统一行为。
+- Snowflake LOAD_HISTORY 去重:同名文件 64 天内不重复加载,COPY 返回
+  "0 files processed"。开发期容易误以为失败,要看 INFORMATION_SCHEMA
+  COPY_HISTORY 或者直接 SELECT COUNT(*) 对账。
+- Snowsight worksheet 多语句 USE 后,后续命令 context 可能还是空。修法:
+  全选 batch 跑,或逐条 Cmd+Return,或全限定名 `@db.schema.stage`。
+- `transaction` 不是 Snowflake 保留字,SELECT FROM transaction 直接用;
+  加双引号 `"transaction"` 反而错(大小写敏感找小写表)。
+- `rows` 是保留字,不能当 AS 别名,用 row_count 或 n。
+
+**Design notes (Day 5 收获):**
+- METADATA$FILENAME + METADATA$FILE_ROW_NUMBER 是 Snowflake stage 元数据,
+  COPY INTO 时直接当 _source_file / _row_num 写入,完全免去 Python loader
+  拼接逻辑。模板:`SELECT $1..$N, METADATA$FILENAME, METADATA$FILE_ROW_NUMBER`
+  在 13 张 csv/pipe/jsonl/fixed_width 后续表全部复用。
+- _row_num 在 Postgres vs Snowflake 起算不同:Postgres 数文件物理行
+  (header inclusive,1-indexed),Snowflake 数 SKIP_HEADER 后数据行
+  (1-indexed)。e.g. employer_registry: Postgres 2..401, Snowflake 1..400。
+  Raw 层保留各自 native;stg 层 Week 5 +/-1 对齐。
+- _source_file 也不对称:Postgres 是干净 basename,Snowflake 是
+  stage 全路径 + .gz 后缀。同样 stg 层规范化。
+- transaction_control / member_census_control 表 Day 5 全部留空,T/HDR/TRL
+  行通过 ON_ERROR=CONTINUE 跳过(或 read_rows() 自身跳)。两个 control 表
+  补到 Day 6 或 Week 9。
+
+**Next (Day 5 收尾, 5/19):**
+- Step 6: t3010_ident (~84k 行) + t3010_schedule3 (~43k 行) COPY INTO
+- Step 7: 全表对账(Snowflake vs Postgres 14 张表的 row count 一张表)
+- Step 8: Day 5 commit + progress log
+- 留两个 known issue:
+  - portal_event 1.8% 差异(Day 6 用 TRY_PARSE_JSON 补)
+  - 2 个 control 表空(Day 6+ 或 Week 9 补)
