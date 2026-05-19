@@ -59,3 +59,6 @@ logs/
 # ===== Docker =====
 # Keep Dockerfiles, ignore local volumes
 docker-volumes/
+
+# Staging files for Snowflake load (regenerable from .DAT)
+data/staging/

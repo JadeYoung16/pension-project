@@ -32,7 +32,8 @@ UPLOAD_PLAN = [
     ("portal_event",       "data/synthetic/portal_events",           "*.jsonl"),
     ("t3010_ident",        "data/raw_external/cra_t3010_2023",       "ident_2023_update.csv"),
     ("t3010_schedule3",    "data/raw_external/cra_t3010_2023",       "schedule_3_compensation_2023.csv"),
-    # member_census skipped — preprocessed in Step 5
+     # member_census: preprocessed .DAT → CSV via preprocess_member_census.py
+    ("member_census",      "data/staging/member_census",             "*.csv"),
 ]
 
 
