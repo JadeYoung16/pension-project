@@ -244,3 +244,53 @@ Week 5 起 loader 不再修改,作为上游基础设施服务下游 dbt/Snowflak
 - 留两个 known issue:
   - portal_event 1.8% 差异(Day 6 用 TRY_PARSE_JSON 补)
   - 2 个 control 表空(Day 6+ 或 Week 9 补)
+
+
+  ## 2026-05-19 — Week 4 Day 5(完成)
+
+承接昨天下半段,今早收尾。
+
+**Done(Day 5 收尾段):**
+- Step 6: t3010_ident (83,969) + t3010_schedule3 (43,151) COPY INTO 通
+- Step 7: 全表对账完成。14 张表 Postgres vs Snowflake 一致,
+  差异全部在已知项:
+  - portal_event Δ = -1,069 行(1.8%, Day 6 用 TRY_PARSE_JSON 补)
+  - _rejected / _load_audit Snowflake 端空(设计选择,Snowflake 用内置
+    INFORMATION_SCHEMA.COPY_HISTORY + ACCOUNT_USAGE.COPY_HISTORY 顶替)
+  - member_census_control / transaction_control 两边都空(Day 6+ 补 control
+    数据 parsing,或者 Week 9 polish 一起补)
+
+**数据完整度:Postgres 956,624 行 / Snowflake 955,524 行 / 99.88%**
+
+**Snowflake side 语法/版本踩坑(Day 5 末段补充):**
+- `(FILE_FORMAT => (TYPE = CSV, FIELD_DELIMITER = ',', ...))` inline 写法
+  在 stage SELECT 上下文不稳定;命名 file format 引用更稳:
+  `(FILE_FORMAT => 'PENSION_DEV.RAW_ONCAP.CSV_FORMAT')`。
+  COPY INTO 里则用 `FILE_FORMAT = (FORMAT_NAME = CSV_FORMAT)`,语法略不同。
+- stage 跨 schema 引用必须用全限定名 `@PENSION_DEV.RAW_ONCAP.LOAD_STAGE/`。
+
+**Day 5 完整 sub-step 状态:**
+- [x] Step 1: stage + 3 file formats
+- [x] Step 2: Python connector 测连接
+- [x] Step 3: PUT 146 文件到 stage(含 member_census 2 个预处理 csv)
+- [x] Step 4: employer_registry COPY 模板验证
+- [x] Step 4b: 6 张表 COPY(portal partial)
+- [x] Step 5: member_census 预处理 + COPY
+- [x] Step 6: t3010 两表 COPY
+- [x] Step 7: 全表对账
+- [ ] Step 8: 此处 commit(下一步动作)
+
+**Buffer 状态:**
+- 原计划 Day 5 = 5/18,实际 5/17 上半段 + 5/18 下半段 + 5/19 收尾段 ≈ 2 天工作量
+- Buffer 已用掉 +1 天,从 +2 天降到 +1 天
+- Week 4 整体仍提前 1 天(原计划 Day 7 = 5/23,理论 5/22 能完成)
+
+**Open carries to Day 6:**
+1. portal_event TRY_PARSE_JSON 重做(行级 reject,把 1,069 行找回来)
+2. (低优)member_census_control + transaction_control 数据(改 read_rows
+   返回 HDR/TRL,或本地预处理生 control csv)
+3. 决定 Day 6 起做什么:
+   - 选项 A: 先补 portal 完整性 + 2 control 表,然后 dbt init
+   - 选项 B: 直接 dbt init,portal 1.8% 和 control 表等 Week 9 polish
+   倾向 B —— raw 层 99.88% 完整,主线推进比补漏更重要,
+   Week 5 dbt staging 起跑后下游 KPI 受影响极小。
