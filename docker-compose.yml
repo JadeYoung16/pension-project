@@ -52,6 +52,8 @@ services:
 
     env_file:
       - .env
+    environment:
+      DBT_PROFILES_DIR: /app/dbt
 
     # Wait until postgres is healthy before starting app
     depends_on:
@@ -70,6 +72,7 @@ services:
     # Keep the container running idle. We'll `docker compose exec app bash`
     # to drop into it whenever we want to run scripts.
     command: tail -f /dev/null
+
 
 # ============================================================
 # Named volumes (managed by Docker, persist across container rebuilds)

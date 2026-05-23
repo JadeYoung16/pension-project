@@ -1,0 +1,8 @@
+
+target/
+dbt_packages/
+logs/
+# dbt
+dbt/pension_dwh/target/
+dbt/pension_dwh/dbt_packages/
+dbt/pension_dwh/logs/

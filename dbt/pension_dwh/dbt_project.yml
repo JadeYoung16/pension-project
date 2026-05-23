@@ -1,0 +1,69 @@
+# =============================================================================
+# dbt project — pension_dwh
+# =============================================================================
+# This project lives at /app/dbt/pension_dwh/ inside the container.
+#
+# Architecture (mirrors Postgres + Snowflake schema layout):
+#   raw_oncap     (Day 5 loader writes — dbt reads only via sources)
+#   raw_external  (Day 5 loader writes — dbt reads only via sources)
+#   stg_oncap     (Week 5 — staging views cleaning raw_oncap)
+#   stg_external  (Week 5 — staging views cleaning raw_external)
+#   mart_oncap    (Week 6 — dim/fct tables for BI consumption)
+#
+# Schema-name behavior is customized in
+#   macros/generate_schema_name.sql
+# so that `+schema: stg_oncap` lands models in `stg_oncap` directly
+# (instead of dbt default `{profile schema}_stg_oncap`).
+# =============================================================================
+
+name: 'pension_dwh'
+version: '1.0.0'
+
+# Which profile in profiles.yml to use for this project
+profile: 'pension_dwh'
+
+# -----------------------------------------------------------------------------
+# Directory conventions (dbt defaults — no need to change)
+# -----------------------------------------------------------------------------
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+# Directories cleaned by `dbt clean`
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+# -----------------------------------------------------------------------------
+# Model configuration
+# -----------------------------------------------------------------------------
+# Schema and materialization config by layer.
+#
+# - staging/* → view (lightweight, always reflects raw; near-zero storage)
+# - marts/*   → table (complex joins; query latency matters in BI)
+#
+# These cascade: any model in models/staging/oncap/ inherits stg_oncap schema
+# and view materialization. Override per-model with {{ config(...) }} if needed.
+# -----------------------------------------------------------------------------
+models:
+  pension_dwh:
+
+    # --- Staging layer: clean raw → typed, named, deduped (views) -----------
+    staging:
+      +materialized: view
+
+      oncap:
+        +schema: stg_oncap
+
+      external:
+        +schema: stg_external
+
+    # --- Marts layer: business-facing dim/fct (tables) ----------------------
+    marts:
+      +materialized: table
+
+      oncap:
+        +schema: mart_oncap

@@ -1,0 +1,41 @@
+# =============================================================================
+# dbt profiles.yml — Snowflake connection for pension_dwh project
+# =============================================================================
+# Profile name 'pension_dwh' must match the 'profile:' field in
+# dbt/pension_dwh/dbt_project.yml (verified in Step 2.2 below).
+#
+# All secrets come from .env (loaded into container env vars by docker compose).
+# This file IS committed to git — only the structure is here, not the values.
+# =============================================================================
+
+pension_dwh:
+  target: dev   # default target if --target not specified on CLI
+
+  outputs:
+
+    # -------------------------------------------------------------------------
+    # dev — local development against PENSION_DEV database
+    # -------------------------------------------------------------------------
+    dev:
+      type: snowflake
+
+      # --- Connection ---
+      account:   "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user:      "{{ env_var('SNOWFLAKE_USER') }}"
+      password:  "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+      role:      "{{ env_var('SNOWFLAKE_ROLE') }}"
+
+      # --- Compute & storage ---
+      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE') }}"
+      database:  "{{ env_var('SNOWFLAKE_DATABASE') }}"
+
+      # --- Default schema for dbt-built models ---
+      # Each dbt model materializes into a schema. We override per-model later
+      # via {{ config(schema='stg_oncap') }} or dbt_project.yml schema config.
+      # This 'schema' here is the DEFAULT only — models without explicit
+      # schema config land in DBT_DEV by default.
+      schema: DBT_DEV
+
+      # --- Execution tuning ---
+      threads: 4                  # parallel models; XSMALL handles 4 comfortably
+      client_session_keep_alive: false  # release session after dbt exits
