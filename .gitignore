@@ -62,3 +62,9 @@ docker-volumes/
 
 # Staging files for Snowflake load (regenerable from .DAT)
 data/staging/
+
+# dbt
+dbt/.user.yml
+dbt/pension_dwh/target/
+dbt/pension_dwh/dbt_packages/
+dbt/pension_dwh/logs/

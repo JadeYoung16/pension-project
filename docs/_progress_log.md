@@ -294,3 +294,105 @@ Week 5 起 loader 不再修改,作为上游基础设施服务下游 dbt/Snowflak
    - 选项 B: 直接 dbt init,portal 1.8% 和 control 表等 Week 9 polish
    倾向 B —— raw 层 99.88% 完整,主线推进比补漏更重要,
    Week 5 dbt staging 起跑后下游 KPI 受影响极小。
+
+
+   ## 2026-05-20 - Week 4 Day 6 (dbt scaffold + first staging models)
+
+按计划 Day 6 = 5/20。预估 4-5h, 实际跨越 5/20+5/21 两天 ~6h. Buffer
++0.7 天降到 +0.2 天, 但学到的东西在三个方向都深 (dbt setup / staging
+design / data quality discovery), 值得.
+
+**Done:**
+- Step 1: dbt-core 1.11.11 + dbt-snowflake 1.11.5 装上. requirements.txt
+  pin 哲学重写: == for app-direct deps, range for foundational libs.
+- Step 2: profiles.yml committed at /app/dbt/profiles.yml with env_var
+  references, secrets stay in .env. DBT_PROFILES_DIR injected via
+  docker-compose.
+- Step 3: dbt debug All checks passed.
+- Step 4: dbt_project.yml layered config (staging.oncap -> stg_oncap view,
+  staging.external -> stg_external view, marts.oncap -> mart_oncap table).
+  generate_schema_name macro override so +schema: foo lands models in
+  foo directly (not target.schema_foo).
+- Step 5: _sources.yml declares 14 sources with descriptions including
+  known design caveats from Days 5.
+- Step 6: stg_oncap__employer_registry (400 rows). 4 iterations v1->v4
+  to converge on A/B/C case normalization principle + pay_frequency
+  code-to-word case mapping.
+- Step 7: _properties.yml + 11 tests. PASS=11 first try thanks to
+  v3->v4 raw-data verification cycle.
+- Step 8a: stg_oncap__call_log (4,122 rows). v1 one-shot using the
+  template; 8 tests PASS.
+- Step 8b: stg_oncap__member_census (50,000 rows after snapshot dedup).
+  Most complex of three.
+- Step 9: 3 commits (infrastructure / staging models / progress log).
+
+**Snowflake state at end of Day 6:**
+- stg_oncap.stg_oncap__employer_registry (view, 400)
+- stg_oncap.stg_oncap__call_log (view, 4,122)
+- stg_oncap.stg_oncap__member_census (view, 50,000)
+- raw layer untouched (14 source tables intact)
+
+**Staging design principles established (will reuse Week 5):**
+
+A. Case normalization A/B/C taxonomy:
+   A: enum text -> lower
+   A': cryptic short codes -> case map to full words (no else,
+       defensive against upstream new codes)
+   B: numeric codes -> preserve (lower is no-op)
+   C: display free text -> preserve (lower destroys meaning)
+   Cryptic codes lacking universal interpretation -> preserved,
+   code-to-label translation deferred to dim_* mart layer.
+
+B. PII metadata pattern: contains_pii + pii_type + sensitivity tier
+   in config.meta. Programmatic identification for downstream
+   masking/RBAC.
+
+C. Grain documented in model header. Composite PKs use singular
+   tests until dbt-utils added.
+
+D. NULL semantics: preserve legitimate business NULLs (termination_date,
+   csat_score, member_since_date). Document each in yaml description.
+   Defensive case statements (no else) make schema drift visible.
+
+**dbt test as raw-data quality discovery (4 issues caught):**
+1. sex_code has 3 values (1/2/9), not 2. StatCan census codeset.
+2. status_code has 5 values (a/d/r/s/t), not 2.
+3. member_census raw is monthly snapshot data (100k = 50k x 2 months).
+   member_id alone is not unique.
+4. 4 enum fields show Phase-1 generator UPPERCASE vs Phase-2 lowercase.
+
+Each was a fail-then-fix cycle: my yaml guessed values, dbt test failed,
+data DISTINCT query revealed truth, yaml updated to actual. This is dbt
+test working as designed - upstream data shape forced into review at
+staging rather than silently propagated to mart.
+
+**Stuck / lessons:**
+- pip resolver deadlock: Day 5 ==3.12.3 on snowflake-connector-python
+  blocked Day 6 dbt-snowflake which requires >=4.2.0. requirements.txt
+  needed full pin philosophy rewrite. Lesson: app-direct libs == ;
+  foundational libs (HTTP/crypto/pyarrow) range.
+- Snowflake warehouse 5-layer context precedence (USE > worksheet >
+  connection > USER default > ROLE default). .env still had
+  COMPUTE_WH from earlier setup, didn't match Day 4 PENSION_WH design
+  intent. Fixed: .env single source of truth must reflect design.
+- docker compose build cache: new apt packages (git for dbt) require
+  --no-cache or Dockerfile layer changes don't take effect.
+- YAML deprecation: dbt 1.10+ moved column meta: into config.meta:.
+  Functional difference: nothing yet; warning compels fix to stay
+  spec-current. Caught accidentally inserting prose-style "<- new
+  location" annotations from mentor message into yaml file, breaking
+  parser. Lesson: code blocks shared in writing must be paste-ready;
+  inline annotations belong in surrounding prose, not embedded.
+
+**Buffer state:**
+- Day 6 originally estimated 4-5h, actual 6h across two calendar days.
+- Buffer +0.7 -> +0.2.
+- Week 4 nominal end Day 7 = 5/23, current trajectory 5/22 still
+  meeting target.
+
+**Next (Day 7, 5/22):**
+- 5 remaining oncap staging models (seminar/email/transaction/
+  life_event/portal_event)
+- 2 external staging models (t3010_ident, t3010_schedule3)
+- dbt-utils package install for composite unique / accepted_range
+- Week 4 retro / status notes for Week 5 entry
