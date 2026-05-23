@@ -1,0 +1,494 @@
+# =============================================================================
+# Properties (descriptions + tests) for stg_oncap__* models
+# =============================================================================
+# All staging models in models/staging/oncap/ are documented here.
+# As Week 5 adds more staging models, append entries to the `models:` list.
+#
+# Test philosophy (Week 4 baseline):
+#   - PK columns: unique + not_null
+#   - FK columns (joins to other tables): relationships test (added Week 5+)
+#   - Enum text columns: accepted_values to lock down valid set
+#   - Critical not-null business columns: not_null
+#   - Numeric quality: dbt-utils accepted_range (deferred to Week 5+)
+# =============================================================================
+
+version: 2
+
+models:
+
+  - name: stg_oncap__employer_registry
+    description: >
+      One row per employer (plan sponsor).  Direct staging of
+      raw_oncap.employer_registry with column renames and lowercase
+      normalization on enum text columns (see model SQL for principle).
+      Grain: employer.  Row count: 400.
+    columns:
+
+      - name: employer_id
+        description: "Surrogate key, employer identifier."
+        data_tests:
+          - unique
+          - not_null
+
+      - name: business_number
+        description: >
+          CRA Business Number (9 digits + program suffix RR0001).
+          Join key for raw_external.t3010_ident.
+        data_tests:
+          - not_null
+
+      - name: employer_legal_name
+        description: "Legal entity name. Display-bound; preserved case."
+        data_tests:
+          - not_null
+
+      - name: employer_operating_name
+        description: "DBA / operating name. May differ from legal_name."
+
+      - name: sector_category_code
+        description: "Numeric NAICS-ish industry code (e.g. '15', '40')."
+
+      - name: size_band
+        description: "Employer headcount band (lowercased from raw UPPERCASE)."
+        data_tests:
+          - accepted_values:
+              values: ['micro', 'small', 'medium', 'large']
+
+      - name: pay_frequency
+        description: >
+          Payroll cycle, mapped from raw 2-letter codes
+          (wk/bw/sm/mo → weekly/biweekly/semimonthly/monthly).
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ['weekly', 'biweekly', 'semimonthly', 'monthly']
+
+      - name: employer_status
+        description: "Employer lifecycle status (lowercased from raw 'status')."
+        data_tests:
+          - accepted_values:
+              values: ['active', 'withdrawn']
+
+      - name: city
+        description: "Operating city. Display-bound; preserved case."
+
+      - name: postal_code
+        description: "Canada postal code (uppercase format like 'M5V 3A8')."
+
+      - name: employee_count
+        description: "Total employee headcount."
+
+      - name: enrolled_member_count
+        description: >
+          Active plan members. May be less than employee_count
+          (eligibility, opt-out, etc.).
+
+      - name: participation_start_date
+        description: "Date employer joined the pension plan."
+        data_tests:
+          - not_null
+
+      - name: administrator_name
+        description: "Plan admin contact name (display-bound)."
+
+      - name: administrator_email
+        description: "Plan admin contact email."
+
+      - name: acquisition_channel
+        description: >
+          How the lead was acquired (lowercase from generator phase 2).
+          Used in Week 6 acquisition mart.
+        data_tests:
+          - accepted_values:
+              values: ['event', 'inbound', 'outbound', 'partnership', 'referral']
+
+      - name: prospect_source
+        description: >
+          Where the lead originated (lowercase from generator phase 2).
+          Used in Week 6 acquisition mart.
+        data_tests:
+          - accepted_values:
+              values:
+                - broker
+                - chamber_of_commerce
+                - conference
+                - inbound_web
+                - referral_existing_employer
+                - t3010_outbound_list
+
+      - name: first_contact_date
+        description: "Date of first sales contact with this prospect."
+
+      - name: source_file
+        description: "Raw COPY INTO source file (audit, from METADATA$FILENAME)."
+
+      - name: source_row_num
+        description: "Raw row number in source file (audit)."
+
+      - name: loaded_at
+        description: "Timestamp when raw row was loaded into Snowflake."
+
+# ===========================================================================
+
+  - name: stg_oncap__call_log
+    description: >
+      One row per member call to the OnCap call center.  Lowercase
+      normalization on category/subcategory/resolution_code per the
+      staging case principle.  Grain: call.  Row count: 4,122.
+    columns:
+
+      - name: call_id
+        description: "PK. Format: CALL{YYYYMMDD}{6-digit sequence}."
+        data_tests:
+          - unique
+          - not_null
+
+      - name: member_id
+        description: "FK to stg_oncap__member_census."
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('stg_oncap__member_census')
+              field: member_id
+
+      - name: agent_id
+        description: >
+          Call-center agent identifier (format AGT{4-digit}).
+          80 unique agents in current dataset.  No agent dim table;
+          treated as semi-structured ID for now.
+        data_tests:
+          - not_null
+
+      - name: call_timestamp
+        description: "Call start time (TIMESTAMP_TZ, source timezone preserved)."
+        data_tests:
+          - not_null
+
+      - name: duration_seconds
+        description: "Call duration in seconds."
+
+      - name: call_reason_category
+        description: "Top-level call reason (lowercased from raw UPPERCASE)."
+        data_tests:
+          - accepted_values:
+              values: ['beneficiary', 'buyback', 'complaint', 'general', 'retirement', 'statement']
+
+      - name: call_reason_subcategory
+        description: >
+          Detailed call reason within category (lowercased from raw
+          UPPERCASE_SNAKE_CASE).  Closed business taxonomy of 19 values.
+        data_tests:
+          - accepted_values:
+              values:
+                - address_update
+                - annual_request
+                - cost_inquiry
+                - date_projection
+                - deadline_confirm
+                - death_benefit
+                - delayed_payment
+                - discrepancy
+                - eligibility
+                - info
+                - installment_options
+                - option_selection
+                - other
+                - pension_amount
+                - registration_help
+                - staff_interaction
+                - update
+                - website_issue
+
+      - name: resolution_code
+        description: "Call resolution status (lowercased from raw UPPERCASE)."
+        data_tests:
+          - accepted_values:
+              values: ['callback', 'escalated', 'resolved', 'unresolved']
+
+      - name: csat_score
+        description: >
+          Customer Satisfaction score, 1-5 integer scale.
+          NULL is legitimate (no survey response collected — call ended
+          before survey, customer skipped, etc.).  Range validation
+          deferred to Week 5+ with dbt-utils accepted_range
+          (using `where: csat_score is not null` clause).
+
+      - name: notes
+        description: "Free-text agent notes from call. Display-bound, preserved."
+
+      - name: source_file
+        description: "Raw COPY INTO source file (audit)."
+
+      - name: source_row_num
+        description: "Raw row number in source file (audit)."
+
+      - name: loaded_at
+        description: "Timestamp when raw row was loaded into Snowflake."
+
+
+# ===========================================================================
+
+  - name: stg_oncap__member_census
+    description: >
+      One row per pension plan member (latest monthly snapshot).
+      Grain: (member_id, employer_id) — composite PK.
+      Row count: 50,000 (one snapshot of 100,000 raw rows).
+      Raw retains both monthly snapshots (20231231, 20240131) for
+      future SCD Type 2 modeling at the snapshot layer.
+    columns:
+
+      - name: member_id
+        description: "FK to stg_oncap__member_census."
+        data_tests:
+          - not_null
+
+      - name: employer_id
+        description: >
+          FK to stg_oncap__employer_registry.
+          Combined with member_id forms the composite PK.
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('stg_oncap__employer_registry')
+              field: employer_id
+
+      # --- PII: identity --------------------------------------------------
+      - name: sin_last_4
+        description: >
+          Last 4 digits of Social Insurance Number. Used for ID verification
+          in customer service interactions. Not displayed in BI reports.
+        config:                           
+          meta:
+            contains_pii: true
+            pii_type: government_id
+            sensitivity: high
+
+      - name: first_name
+        description: "Member first name."
+        config:
+          meta:
+            contains_pii: true
+            pii_type: name
+            sensitivity: high
+
+      - name: middle_initial
+        description: "Member middle initial. NULL when member has no middle name."
+        config:
+          meta:
+            contains_pii: true
+            pii_type: name
+            sensitivity: high
+
+      - name: last_name
+        description: "Member last name."
+        config:
+          meta:
+            contains_pii: true
+            pii_type: name
+            sensitivity: high
+
+      - name: date_of_birth
+        description: "Member date of birth (renamed from raw `dob`)."
+        data_tests:
+          - not_null
+        config:
+          meta:
+            contains_pii: true
+            pii_type: date_of_birth
+            sensitivity: high
+
+      # --- Demographics ---------------------------------------------------
+      - name: sex
+        description: >
+          Mapped from raw numeric code per Statistics Canada standard:
+          1→male, 2→female, 9→not_stated. Mapping verified against
+          generator config and StatCan census codeset.
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ['male', 'female', 'not_stated']
+
+      - name: marital_status_code
+        description: >
+          Single-character marital status code (lowercased).
+          Values: m (married), s (single), d (divorced),
+          w (widowed), u (unknown/unspecified).
+        data_tests:
+          - accepted_values:
+              values: ['m', 's', 'd', 'w', 'u']
+
+      - name: language_preference
+        description: >
+          Language preference code (lowercased). Values: en (English),
+          fr (French). Full label translation in dim_member mart.
+        data_tests:
+          - accepted_values:
+              values: ['en', 'fr']
+
+      # --- PII: contact ---------------------------------------------------
+      - name: street_address
+        description: "Member street address."
+        config:
+          meta:
+            contains_pii: true
+            pii_type: address
+            sensitivity: high
+
+      - name: city
+        description: "Member city. City-level only, lower sensitivity."
+        config:
+          meta:
+            contains_pii: true
+            pii_type: address
+            sensitivity: low
+
+      - name: province
+        description: "Canadian province (2-letter code)."
+
+      - name: postal_code
+        description: >
+          Canadian postal code (M5V 3A8 format). Quasi-identifier when
+          combined with DOB + sex.
+        config:
+          meta:
+            contains_pii: true
+            pii_type: address
+            sensitivity: medium
+
+      - name: phone
+        description: "Member phone number. NULL if not provided."
+        config:
+          meta:
+            contains_pii: true
+            pii_type: contact
+            sensitivity: high
+
+      - name: email
+        description: "Member email address. NULL if not provided."
+        config:
+          meta:
+            contains_pii: true
+            pii_type: contact
+            sensitivity: high
+
+      # --- Employment -----------------------------------------------------
+      - name: hire_date
+        description: "Date member was hired by current employer."
+        data_tests:
+          - not_null
+
+      - name: enrollment_date
+        description: "Date member enrolled in the pension plan."
+        data_tests:
+          - not_null
+
+      - name: termination_date
+        description: >
+          Date member's employment ended. NULL if currently employed.
+
+      - name: status_code
+        description: >
+          Member employment status (lowercased single-char code).
+          Values: a (active), d (departed/terminated), r (retired),
+          s (suspended), t (transferred).
+          Full label translation in dim_member mart.
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ['a', 'd', 'r', 's', 't']
+
+      - name: employment_type
+        description: >
+          Employment type code (lowercased). Values: ft (full-time),
+          pt (part-time). Full label translation in dim_member mart.
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ['ft', 'pt']
+
+      # --- Compensation ---------------------------------------------------
+      - name: annual_salary
+        description: "Annual base salary in CAD."
+
+      - name: salary_band_code
+        description: >
+          Salary band code (lowercased). Values: en (entry), md (mid),
+          sr (senior), ex (executive). Full label translation in
+          dim_member mart.
+        data_tests:
+          - accepted_values:
+              values: ['en', 'md', 'sr', 'ex']
+
+      - name: job_category
+        description: >
+          Job category code (lowercased). Values: adm (admin),
+          svc (service), mgr (management), prf (professional),
+          exe (executive). Full label translation in dim_member mart.
+        data_tests:
+          - accepted_values:
+              values: ['adm', 'svc', 'mgr', 'prf', 'exe']
+
+      # --- Pension service & accrual --------------------------------------
+      - name: credited_service_years
+        description: "Years of credited pensionable service."
+
+      - name: eligible_buyback_service
+        description: >
+          Years of service eligible for buyback (e.g. unpaid leave
+          periods that can be retroactively credited).
+
+      - name: last_buyback_leave_end_date
+        description: >
+          End date of last buyback-eligible leave period.
+          NULL if member has never had a buyback-eligible leave.
+
+      - name: normal_retirement_date
+        description: "Member's normal retirement date."
+
+      - name: accrued_annual_pension
+        description: "Annual pension amount accrued to date in CAD."
+
+      - name: beneficiary_on_file
+        description: >
+          Whether member has designated a beneficiary on file.
+          Values: Y (yes), N (no). Preserved as-is (only 2 values,
+          no normalization needed).
+        data_tests:
+          - accepted_values:
+              values: ['Y', 'N']
+
+      # --- Membership lifecycle -------------------------------------------
+      - name: member_since_date
+        description: >
+          Date member's enrollment became effective. Nullable: NULL
+          indicates pending enrollment or historical migration edge case.
+
+      - name: last_statement_date
+        description: "Date of most recent annual statement sent."
+
+      - name: record_status
+        description: >
+          Record-level status code (lowercased). 'a' for active records.
+          Differs from status_code (which is employment status).
+        data_tests:
+          - accepted_values:
+              values: ['a']
+
+      # --- Audit ----------------------------------------------------------
+      - name: source_file
+        description: >
+          Raw COPY INTO source file (audit). All rows in this staging
+          come from the latest snapshot file (e.g. ONCAP001_MEMBER_CENSUS_20240131).
+
+      - name: source_row_num
+        description: "Raw row number in source file (audit)."
+
+      - name: loaded_at
+        description: "Timestamp when raw row was loaded into Snowflake."
+    
+    # -----------------------------------------------------------------------
+    # Composite uniqueness: (member_id, employer_id) is the real PK.
+    # Use dbt_utils.unique_combination_of_columns at model level
+    # (requires dbt-utils package; for now, model-level placeholder).
+    # Deferred to Week 5+ when dbt_utils is installed.
+    # -----------------------------------------------------------------------

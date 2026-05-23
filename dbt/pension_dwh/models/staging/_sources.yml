@@ -1,0 +1,111 @@
+# =============================================================================
+# Sources — raw tables produced by upstream loaders (Day 5)
+# =============================================================================
+# These are the entry points for dbt's lineage graph. Every staging model
+# uses {{ source('raw_oncap'|'raw_external', '<table>') }} to read from these,
+# and dbt resolves the reference to the fully-qualified Snowflake table at
+# compile time.
+#
+# Row counts shown below are end-of-Day-5 reconciliation (2026-05-19).
+# =============================================================================
+
+version: 2
+
+sources:
+
+  # ===========================================================================
+  # raw_oncap — pension admin system landing zone
+  # ===========================================================================
+  # 1:1 mirror of OnCap admin files (CSV / pipe / JSONL / fixed-width).
+  # Loaded by upstream_simulators + loaders/ pipeline; dbt is read-only here.
+  # ===========================================================================
+  - name: raw_oncap
+    database: PENSION_DEV
+    schema: raw_oncap
+    description: >
+      OnCap pension admin landing layer.  Mirror of upstream files,
+      no transformations applied.  Written by the Python loader.
+
+    tables:
+
+      # --- core business tables (8) -----------------------------------------
+      - name: employer_registry
+        description: "Plan sponsor master.  400 employers as of 2023 cohort."
+
+      - name: call_log
+        description: "Member calls to the OnCap call center (4,122 rows)."
+
+      - name: seminar_attendance
+        description: "In-person + webinar seminar attendance records (5,816 rows)."
+
+      - name: email_engagement
+        description: "Email send/open/click events (227,502 rows)."
+
+      - name: transaction
+        description: >
+          Member contribution transactions (186,865 detail rows).
+          Loaded with ON_ERROR=CONTINUE; trailer (T) rows skipped, control
+          totals tracked separately in transaction_control (currently empty).
+
+      - name: life_event
+        description: "Member life events: marriage, retirement, beneficiary changes (17,638 rows)."
+
+      - name: member_census
+        description: >
+          Annual member census snapshot (100,000 members).  Originally a
+          fixed-width .DAT file; preprocessed to CSV in loader pipeline
+          (see loaders/snowflake/preprocess_member_census.py).
+
+      - name: portal_event
+        description: >
+          Member portal click events from JSONL logs (58,537 rows).
+          Note: 1,069 rows excluded due to malformed JSON; TRY_PARSE_JSON
+          recovery is a Week 9 polish item.
+
+      # --- control / audit tables (4, currently 0-row but declared for completeness)
+      - name: member_census_control
+        description: >
+          HDR/TRL control row aggregates for member_census files.
+          Currently empty (raw_oncap layer reconciliation is via row counts;
+          control parsing deferred to Week 9 polish).
+
+      - name: transaction_control
+        description: >
+          HDR/TRL control row aggregates for transaction files.
+          Currently empty (same reason as member_census_control).
+
+      - name: _rejected
+        description: >
+          Per-row reject log for upstream loader.  Currently empty in
+          Snowflake — using INFORMATION_SCHEMA.COPY_HISTORY as ground truth.
+          See progress log 2026-05-19 for design rationale.
+
+      - name: _load_audit
+        description: >
+          Per-load audit log.  Currently empty in Snowflake — same as
+          _rejected, using built-in COPY_HISTORY views instead.
+
+  # ===========================================================================
+  # raw_external — CRA T3010 (publicly available Canadian charity data)
+  # ===========================================================================
+  - name: raw_external
+    database: PENSION_DEV
+    schema: raw_external
+    description: >
+      External public data: CRA T3010 charity returns.  Used to enrich
+      employer dimension (Week 6) via business number (BN) join.
+
+    tables:
+
+      - name: t3010_ident
+        description: >
+          Charity identification: BN, legal name, location, designation.
+          83,969 rows (2023 update file, all Canadian registered charities).
+
+      - name: t3010_schedule3
+        description: >
+          Schedule 3 employee/compensation data.  43,151 rows — only ~half
+          of t3010_ident, since small charities don't file Schedule 3.
+          Inner join with t3010_ident drops the no-Schedule-3 charities;
+          left join keeps all 83,969 but NULL-pads the comp columns.
+          Decision deferred to stg_external + Week 6 dim_employer.
