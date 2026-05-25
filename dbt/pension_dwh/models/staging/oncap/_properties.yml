@@ -209,10 +209,13 @@ models:
         description: >
           Customer Satisfaction score, 1-5 integer scale.
           NULL is legitimate (no survey response collected — call ended
-          before survey, customer skipped, etc.).  Range validation
-          deferred to Week 5+ with dbt-utils accepted_range
-          (using `where: csat_score is not null` clause).
-
+          before survey, customer skipped, etc.).  
+        data_tests:
+        - dbt_utils.accepted_range:
+            min_value: 1
+            max_value: 5
+            inclusive: true
+            where: "csat_score is not null"
       - name: notes
         description: "Free-text agent notes from call. Display-bound, preserved."
 
@@ -235,6 +238,12 @@ models:
       Row count: 50,000 (one snapshot of 100,000 raw rows).
       Raw retains both monthly snapshots (20231231, 20240131) for
       future SCD Type 2 modeling at the snapshot layer.
+    data_tests:
+    - dbt_utils.unique_combination_of_columns:
+        combination_of_columns:
+          - member_id
+          - employer_id
+
     columns:
 
       - name: member_id
@@ -486,9 +495,576 @@ models:
       - name: loaded_at
         description: "Timestamp when raw row was loaded into Snowflake."
     
-    # -----------------------------------------------------------------------
-    # Composite uniqueness: (member_id, employer_id) is the real PK.
-    # Use dbt_utils.unique_combination_of_columns at model level
-    # (requires dbt-utils package; for now, model-level placeholder).
-    # Deferred to Week 5+ when dbt_utils is installed.
-    # -----------------------------------------------------------------------
+
+
+# ===========================================================================
+
+  - name: stg_oncap__seminar_attendance
+    description: >
+      One row per seminar registration. Grain: registration.
+      Row count: 5,816.
+      
+      Tracks both registration and actual attendance (via attended_flag).
+      seminar_location captures the physical city (Ontario) or 'Virtual'
+      for online seminars; deterministic upstream relationship with
+      attendance_format.
+    columns:
+
+      - name: attendance_id
+        description: "PK. Format: SEM{YYYY}01{7-digit sequence}."
+        data_tests:
+          - unique
+          - not_null
+
+      - name: member_id
+        description: "FK to stg_oncap__member_census."
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('stg_oncap__member_census')
+              field: member_id
+
+      - name: registration_date
+        description: "Date member registered for the seminar."
+        data_tests:
+          - not_null
+
+      - name: seminar_date
+        description: "Date seminar was held."
+        data_tests:
+          - not_null
+
+      - name: seminar_topic
+        description: "Seminar topic (lowercased from raw UPPERCASE_SNAKE)."
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ['buyback_101', 'general', 'investment', 'pre_retirement']
+
+      - name: attendance_format
+        description: "Format (lowercased from raw UPPERCASE)."
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ['in_person', 'virtual']
+
+      - name: seminar_location
+        description: >
+          Physical city (Hamilton/Kingston/London/Mississauga/Ottawa/
+          Sudbury/Toronto) for in_person; 'Virtual' for virtual format.
+          C-class display field, preserved case.
+
+      - name: attended_flag
+        description: >
+          Whether member actually attended (Y) or registered but no-show (N).
+          Preserved as-is (2 values, no normalization needed).
+        data_tests:
+          - accepted_values:
+              values: ['Y', 'N']
+
+      - name: source_file
+        description: "Raw COPY INTO source file (audit)."
+
+      - name: source_row_num
+        description: "Raw row number in source file (audit)."
+
+      - name: loaded_at
+        description: "Timestamp when raw row was loaded into Snowflake."
+
+
+# ===========================================================================
+
+  - name: stg_oncap__email_engagement
+    description: >
+      One row per email event. Grain: event (not email).
+      Row count: 227,502 (~50k unique emails × ~4.5 events per email funnel).
+      
+      Event funnel: SENT → DELIVERED → OPENED → CLICKED.
+      Failure paths: BOUNCED (delivery failure), UNSUBSCRIBED (compliance).
+      
+      Campaign normalization: campaign_id and campaign_name are 1:1 in
+      raw; would normalize to dim_campaign in mart layer.
+    columns:
+
+      - name: event_id
+        description: "PK. Format: EML{YYYYMMDD}{6-digit sequence}."
+        data_tests:
+          - unique
+          - not_null
+
+      - name: member_id
+        description: "FK to stg_oncap__member_census."
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('stg_oncap__member_census')
+              field: member_id
+
+      - name: campaign_id
+        description: >
+          Campaign identifier. Current values: CAMP_NEWSLETTER,
+          CAMP_Q1_2024_STMT. Preserved as identifier (case kept);
+          new campaigns added over time, so no accepted_values lock.
+        data_tests:
+          - not_null
+
+      - name: campaign_name
+        description: >
+          Human-readable campaign name, 1:1 with campaign_id.
+          Display-bound; preserved case. Candidate for dim_campaign
+          extraction in mart layer.
+
+      - name: event_type
+        description: "Email funnel event (lowercased from raw UPPERCASE)."
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ['sent', 'delivered', 'opened', 'clicked', 'bounced', 'unsubscribed']
+
+      - name: event_timestamp
+        description: "Event timestamp (TIMESTAMP_TZ, source timezone preserved)."
+        data_tests:
+          - not_null
+
+      - name: link_url_clicked
+        description: >
+          URL clicked by member. NULL when event_type is not 'clicked'
+          (95.4% of rows). Case-sensitive, preserved as-is.
+
+      - name: source_file
+        description: "Raw COPY INTO source file (audit)."
+
+      - name: source_row_num
+        description: "Raw row number in source file (audit)."
+
+      - name: loaded_at
+        description: "Timestamp when raw row was loaded into Snowflake."
+
+
+ # ===========================================================================
+
+  - name: stg_oncap__life_event
+    description: >
+      One row per member life event. Grain: event.  Row count: 17,638.
+      
+      Wide event table: different event_type_code values populate
+      different column subsets:
+      - Buyback events (80%): use buyback_category_code, costs,
+        payment_method, etc.
+      - Non-buyback events (ADDR_CHG, BENE_UPD, MARITAL — 20%):
+        buyback columns are NULL by design.
+      
+      Conditional NULL semantics are documented per-column.
+    columns:
+
+      - name: event_id
+        description: "PK. Format: EVT{16-char alphanumeric}."
+        data_tests:
+          - unique
+          - not_null
+
+      - name: member_id
+        description: "FK to stg_oncap__member_census."
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('stg_oncap__member_census')
+              field: member_id
+
+      - name: employer_id
+        description: "FK to stg_oncap__employer_registry."
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('stg_oncap__employer_registry')
+              field: employer_id
+
+      - name: event_date
+        description: "Date the event occurred."
+        data_tests:
+          - not_null
+
+      - name: event_timestamp
+        description: "Event timestamp (TIMESTAMP_TZ, source timezone preserved)."
+
+      - name: event_type_code
+        description: >
+          Type of life event (lowercased from raw UPPERCASE).
+          BBK_* are buyback-flow stages; ADDR_CHG/BENE_UPD/MARITAL
+          are non-buyback events.
+        data_tests:
+          - not_null
+          - accepted_values:
+              values:
+                - addr_chg
+                - bbk_app
+                - bbk_approved
+                - bbk_cancelled
+                - bbk_complete
+                - bbk_installment_pay
+                - bbk_quote
+                - bene_upd
+                - marital
+
+      - name: event_status
+        description: "Current event status (lowercased from raw UPPERCASE)."
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ['approved', 'cancelled', 'completed', 'quoted', 'rejected', 'submitted']
+
+      - name: channel_code
+        description: >
+          How the event was initiated (lowercased from raw UPPERCASE).
+          ADVISOR (rep-initiated), MAIL (paper form), PHONE (call center),
+          PORTAL (self-service), SYSTEM (automated).
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ['advisor', 'mail', 'phone', 'portal', 'system']
+
+      - name: buyback_category_code
+        description: >
+          Buyback service category (lowercased from raw UPPERCASE).
+          Values: loa (leave of absence), ml (maternity leave),
+          pep (prior eligible period), pst (prior service transfer),
+          ptt (part-time). NULL for non-buyback events.
+        data_tests:
+          - accepted_values:
+              values: ['loa', 'ml', 'pep', 'pst', 'ptt']
+
+      - name: buyback_service_years
+        description: >
+          Years of service being bought back (decimal).
+          NULL for non-buyback events.
+
+      - name: leave_end_date
+        description: >
+          End date of leave period for buyback calculations.
+          NULL for non-buyback events.
+
+      - name: months_since_eligibility
+        description: >
+          Months elapsed since member became eligible to buy back the
+          leave period. Used for window/option determination.
+          NULL for non-buyback events.
+
+      - name: is_within_window
+        description: >
+          Y if buyback request is within the time window for standard
+          processing. N if outside (requires extra approval).
+          NULL for non-buyback events. Preserved as Y/N.
+        data_tests:
+          - accepted_values:
+              values: ['Y', 'N']
+
+      - name: is_open_option
+        description: >
+          Y if member has an open buyback option pending decision.
+          NULL for non-buyback events. Preserved as Y/N.
+        data_tests:
+          - accepted_values:
+              values: ['Y', 'N']
+
+      - name: member_cost
+        description: >
+          Member's portion of buyback cost in CAD.
+          NULL for non-buyback events.
+
+      - name: employer_cost
+        description: >
+          Employer's portion of buyback cost in CAD.
+          NULL for non-buyback events.
+
+      - name: total_cost
+        description: >
+          Total buyback cost in CAD (= member_cost + employer_cost in raw).
+          NULL for non-buyback events. Sum invariant deferred to
+          singular test in Week 9 polish.
+
+      - name: payment_method
+        description: >
+          How member pays the buyback (lowercased from raw UPPERCASE).
+          NULL for non-buyback events or when not yet decided.
+        data_tests:
+          - accepted_values:
+              values: ['installment', 'lump_sum']
+
+      - name: installment_months
+        description: >
+          Number of installment months for INSTALLMENT payment_method.
+          NULL for LUMP_SUM payments and non-buyback events.
+
+      - name: notes
+        description: "Free-text notes from the event recorder. Display-bound, preserved."
+
+      - name: source_file
+        description: "Raw COPY INTO source file (audit)."
+
+      - name: source_row_num
+        description: "Raw row number in source file (audit)."
+
+      - name: loaded_at
+        description: "Timestamp when raw row was loaded into Snowflake."
+
+
+# ===========================================================================
+
+  - name: stg_oncap__transaction
+    description: >
+      One row per pension contribution transaction. Grain: transaction.
+      Row count: 186,865.
+      
+      Known data quality issues (see model SQL header):
+      - transaction_id has 3 duplicates (generator bug, tracked as warn).
+      - contribution_type is 100% 'REG' (generator gap, no BBK/VOL).
+      - buyback_reference_id is 100% NULL (related to above).
+    columns:
+
+      - name: transaction_id
+        description: >
+          Transaction identifier. Format: TXN{13-digit}.
+          NOT 100% unique due to upstream generator bug
+          (3 duplicates of 186,865). Unique test configured as warn,
+          with error threshold at 10 duplicates to catch degradation.
+          Fix in Week 9 polish backlog.
+        data_tests:
+          - unique:
+              config:
+                severity: warn
+                warn_if: ">= 1"
+                error_if: ">= 10"
+          - not_null
+
+      - name: member_id
+        description: "FK to stg_oncap__member_census."
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('stg_oncap__member_census')
+              field: member_id
+
+      - name: employer_id
+        description: "FK to stg_oncap__employer_registry."
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('stg_oncap__employer_registry')
+              field: employer_id
+
+      - name: pay_date
+        description: "Date pension contribution was paid."
+        data_tests:
+          - not_null
+
+      - name: pay_period_start
+        description: >
+          Start date of pay period covered by this transaction.
+          2% NULL (3,759/186,865) — generator artifact, random
+          across all pay frequencies. Derivable in mart layer
+          from pay_date - frequency_offset.
+        data_tests:
+          - not_null:
+              config:
+                severity: warn
+                warn_if: ">= 1"
+                error_if: ">= 5000"
+
+      - name: pay_period_end
+        description: "End date of pay period covered by this transaction."
+        data_tests:
+          - not_null
+
+      - name: pay_frequency
+        description: >
+          Payroll cycle, mapped from raw 2-letter codes
+          (wk/bw/sm/mo -> weekly/biweekly/semimonthly/monthly).
+          Same mapping as stg_oncap__employer_registry; candidate
+          for shared macro (Week 5+).
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ['weekly', 'biweekly', 'semimonthly', 'monthly']
+
+      - name: pensionable_earnings
+        description: "Member's pensionable earnings for this pay period, CAD."
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: member_contribution
+        description: "Member's contribution amount in CAD."
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: employer_contribution
+        description: >
+          Employer's contribution amount in CAD.
+          In current OnCap plan: equals member_contribution (1:1 match).
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: contribution_type
+        description: >
+          Contribution type (lowercased). Currently only 'reg' (regular).
+          Generator does not produce BBK or VOL types; relationship with
+          life_event BBK_INSTALLMENT_PAY events is not modeled yet.
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ['reg']
+
+      - name: buyback_reference_id
+        description: >
+          When transaction is a buyback installment payment, references
+          stg_oncap__life_event.event_id. Currently 100% NULL
+          (see model header for context).
+
+      - name: transaction_status
+        description: "Transaction status (lowercased from raw UPPERCASE)."
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ['ok', 'rj']
+
+      - name: source_file
+        description: "Raw COPY INTO source file (audit)."
+
+      - name: source_row_num
+        description: "Raw row number in source file (audit)."
+
+      - name: loaded_at
+        description: "Timestamp when raw row was loaded into Snowflake."
+
+
+# ===========================================================================
+
+  - name: stg_oncap__portal_event
+    description: >
+      One row per member portal interaction. Grain: event.
+      Row count: 58,537.
+      
+      Raw layer incompleteness: Day 5 COPY INTO partial-loaded 1,069 rows
+      (1.8%) due to malformed JSON in 5 of 91 source jsonl files. Expected
+      total ~59,606 rows. Week 9 polish: TRY_PARSE_JSON re-ingestion to recover.
+      
+      Schema notes:
+      - event_type values already lowercase (phase-2 generator design)
+      - page_path is 1:1 derivable from event_type (raw artifact)
+      - referrer is 100% NULL (generator gap, Week 9 polish backlog)
+      - user_agent has only 4 unique values (generator simplification)
+      - event_properties is conditional VARIANT — populated for portal_login
+        with auth_method, empty {} for other event types
+    columns:
+
+      - name: event_id
+        description: "PK. Format: evt_{17-char alphanumeric}."
+        data_tests:
+          - unique
+          - not_null
+
+      - name: member_id
+        description: "FK to stg_oncap__member_census."
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('stg_oncap__member_census')
+              field: member_id
+
+      - name: session_id
+        description: >
+          Browser session identifier. Multiple events share a session_id
+          when user stays logged in.
+        data_tests:
+          - not_null
+
+      - name: event_timestamp
+        description: "Event timestamp (TIMESTAMP_TZ, source timezone preserved)."
+        data_tests:
+          - not_null
+
+      - name: event_type
+        description: >
+          Type of portal interaction. Already lowercased in raw (phase-2
+          generator). 1:1 mapping to page_path in current generator design.
+        data_tests:
+          - not_null
+          - accepted_values:
+              values:
+                - portal_login
+                - portal_logout
+                - statement_view
+                - pension_calculator_use
+                - buyback_info_page_view
+                - document_download
+                - beneficiary_page_view
+                - buyback_quote_request
+
+      - name: page_path
+        description: >
+          URL path of the page generating the event. Currently 1:1
+          with event_type (e.g. portal_login → /login). Real web events
+          typically have multi-source pages; this is a generator artifact.
+        data_tests:
+          - not_null
+          - accepted_values:
+              values:
+                - /login
+                - /logout
+                - /statements
+                - /calculator
+                - /buyback/info
+                - /documents
+                - /beneficiary
+                - /buyback/quote
+
+      - name: referrer
+        description: >
+          HTTP referrer URL. Currently 100% NULL — generator does not
+          populate. Week 9 polish backlog (limits flow-source analytics).
+
+      - name: ip_hash
+        description: >
+          SHA-256 hash of source IP address. Pre-hashed at ingestion
+          for PII protection. 5.1% NULL (~3,000 rows) for session-continuation
+          events where generator omits re-logging.
+        config:
+          meta:
+            contains_pii: true
+            pii_type: technical_identifier
+            sensitivity: medium
+
+      - name: user_agent
+        description: >
+          Browser/device user-agent string. 3.1% NULL (session continuation).
+          Currently only 4 unique values (generator simplification).
+        config:
+          meta:
+            contains_pii: true
+            pii_type: technical_identifier
+            sensitivity: low
+
+      - name: event_properties
+        description: >
+          Semi-structured VARIANT field. Schema varies by event_type:
+          - portal_login: {"auth_method": "password"}
+          - all other event_types: {} (empty object)
+          Downstream marts can flatten with event_properties:auth_method::varchar
+          syntax for portal_login-specific analytics.
+
+      - name: source_file
+        description: "Raw COPY INTO source file (audit)."
+
+      - name: source_row_num
+        description: "Raw row number in source file (audit)."
+
+      - name: loaded_at
+        description: "Timestamp when raw row was loaded into Snowflake."

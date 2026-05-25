@@ -1,0 +1,183 @@
+version: 2
+
+models:
+
+  # ===========================================================================
+  # External - CRA T3010 (Canadian Charity Information Returns)
+  # ===========================================================================
+  
+  - name: stg_external__t3010_ident
+    description: >
+      One row per CRA-registered Canadian charity. 83,969 rows.
+      
+      Public CRA data, used in mart layer to enrich employer dimension
+      via business_number join. Charity legal_name / address / category
+      provide context for prospect scoring.
+      
+      Country distribution: 99.96% CA (Canadian), 34 US, 2 GB. Some US
+      states present in province field for cross-border entities.
+    columns:
+
+      - name: business_number
+        description: >
+          CRA business number with charity suffix (RR0001). 9-digit BN +
+          'RR' + 4-digit suffix. PK for charity identification.
+        data_tests:
+          - unique
+          - not_null
+
+      - name: category
+        description: >
+          CRA charity category code (numeric string).
+          Raw data has dual format ('30' vs '0030') for ~20 rows;
+          staging normalizes via ltrim leading zeros for consistent
+          grouping in downstream marts.
+
+      - name: sub_category
+        description: >
+          CRA charity sub-category code (numeric string).
+          Leading zeros stripped at staging (same as category).
+
+      - name: designation
+        description: "Charity designation: A, B, or C."
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ['A', 'B', 'C']
+
+      - name: legal_name
+        description: "Official registered legal name. Display-bound, preserved case."
+        data_tests:
+          - not_null
+
+      - name: account_name
+        description: "Account name for CRA correspondence. Typically equals legal_name."
+
+      - name: address_line_1
+        description: "Charity address line 1 (street/PO box)."
+
+      - name: address_line_2
+        description: "Charity address line 2 (suite/unit)."
+
+      - name: city
+        description: "Charity city/municipality."
+
+      - name: province
+        description: >
+          2-letter province/state code. Mostly Canadian provinces (ON 36%,
+          QC 19%, BC 14%); some US states (NY/FL/CA etc.) for cross-border
+          entities. 2 rows NULL.
+
+      - name: postal_code
+        description: "Postal/ZIP code. Mostly Canadian format (A0A0A0)."
+
+      - name: country
+        description: "ISO 2-letter country code. CA/US/GB."
+        data_tests:
+          - not_null
+
+      - name: source_file
+        description: "Raw COPY INTO source file (audit)."
+
+      - name: source_row_num
+        description: "Raw row number in source file (audit)."
+
+      - name: loaded_at
+        description: "Timestamp when raw row was loaded into Snowflake."
+
+  # ===========================================================================
+  
+  - name: stg_external__t3010_schedule3
+    description: >
+      One row per (charity, fiscal_period_end) combination from CRA T3010
+      Schedule 3 (Compensation of Employees). 43,151 rows.
+      
+      Grain: composite (business_number, fiscal_period_end). 68 BNs file
+      across multiple fiscal years.
+      
+      Sparse data: many small charities don't report all line items.
+      line_300 (15.8% NULL), line_310-345 (mostly NULL for small charities).
+      All line_NNN cast from VARCHAR to NUMBER at staging.
+      
+      Day-7 scope: minimal rename (line_NNN). Week 6 will provide semantic
+      names based on T3010 form spec.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - business_number
+            - fiscal_period_end
+    columns:
+
+      - name: business_number
+        description: >
+          CRA business number with charity suffix (RR0001).
+          FK to stg_external__t3010_ident.business_number. 8 BNs (0.02%)
+          orphan — present in schedule3 but not ident, configured warn.
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('stg_external__t3010_ident')
+              field: business_number
+              config:
+                severity: warn
+                warn_if: ">= 1"
+                error_if: ">= 100"
+
+      - name: fiscal_period_end
+        description: >
+          Fiscal year end date (raw VARCHAR, e.g. '2023-12-31').
+          Composite PK component. Concentrated on calendar year-end
+          (55% 12-31) and quarter-ends.
+        data_tests:
+          - not_null
+
+      - name: form_id
+        description: "CRA form schedule identifier. Always '25' for Schedule 3."
+
+      - name: line_300
+        description: "T3010 Schedule 3 line 300. 15.8% NULL."
+
+      - name: line_305
+        description: "T3010 Schedule 3 line 305."
+
+      - name: line_310
+        description: "T3010 Schedule 3 line 310. Compensation tier."
+
+      - name: line_315
+        description: "T3010 Schedule 3 line 315. Compensation tier."
+
+      - name: line_320
+        description: "T3010 Schedule 3 line 320. Compensation tier."
+
+      - name: line_325
+        description: "T3010 Schedule 3 line 325. Compensation tier."
+
+      - name: line_330
+        description: "T3010 Schedule 3 line 330. Compensation tier."
+
+      - name: line_335
+        description: "T3010 Schedule 3 line 335. Compensation tier."
+
+      - name: line_340
+        description: "T3010 Schedule 3 line 340. Compensation tier."
+
+      - name: line_345
+        description: "T3010 Schedule 3 line 345. Compensation tier."
+
+      - name: line_370
+        description: "T3010 Schedule 3 line 370."
+
+      - name: line_380
+        description: "T3010 Schedule 3 line 380."
+
+      - name: line_390
+        description: "T3010 Schedule 3 line 390. Total compensation."
+
+      - name: source_file
+        description: "Raw COPY INTO source file (audit)."
+
+      - name: source_row_num
+        description: "Raw row number in source file (audit)."
+
+      - name: loaded_at
+        description: "Timestamp when raw row was loaded into Snowflake."
