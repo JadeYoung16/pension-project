@@ -1,0 +1,13 @@
+# =============================================================================
+# dbt packages
+# =============================================================================
+# Installed by: dbt deps
+# Location:     dbt/pension_dwh/dbt_packages/ (gitignored)
+#
+# Pinning philosophy: minor-range, aligned with dbt-core/adapter versioning.
+# dbt-utils tracks dbt-core compatibility loosely; v1.3+ supports dbt 1.7+.
+# =============================================================================
+
+packages:
+  - package: dbt-labs/dbt_utils
+    version: [">=1.3.0", "<2.0.0"]
