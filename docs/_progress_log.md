@@ -390,9 +390,120 @@ staging rather than silently propagated to mart.
 - Week 4 nominal end Day 7 = 5/23, current trajectory 5/22 still
   meeting target.
 
-**Next (Day 7, 5/22):**
+**Next (Day 7, 5/22-23):**
 - 5 remaining oncap staging models (seminar/email/transaction/
   life_event/portal_event)
 - 2 external staging models (t3010_ident, t3010_schedule3)
 - dbt-utils package install for composite unique / accepted_range
 - Week 4 retro / status notes for Week 5 entry
+
+1. transaction_id 3 行重复 (generator bug)
+
+同一 id, 不同 pensionable_earnings
+处理: severity=warn + error_if 10 degradation threshold
+Backlog: Week 9 polish 修 generator
+
+2. pay_period_start 2% NULL (generator artifact)
+
+跨所有 pay_frequency 均匀 ~2% NULL
+处理: severity=warn + error_if 5000 degradation threshold
+Backlog: Week 9 polish 让 generator 永不 NULL
+
+3. contribution_type 单值 + buyback_reference_id 全 NULL (generator gap)
+
+Generator 没生成 BBK contribution type
+life_event 有 8,254 BBK_INSTALLMENT_PAY 但 transaction 0 个 BBK
+Backlog: Week 9 polish 生成 BBK transactions 闭合 lifecycle
+
+
+## 2026-05-23 - Week 4 Day 7 (dbt-utils + 5 more staging models)
+
+按计划 Day 7 = 5/23。预估 4-5h, 实际跨 5/23+5/25 ~5h. Buffer +0.2
+保持。Week 4 主线收口。
+
+**Done:**
+- Step 1: dbt-utils 1.3.x package installed. Replaced Day 6 singular
+  composite-unique test with dbt_utils.unique_combination_of_columns.
+  Added dbt_utils.accepted_range to csat_score (1-5).
+- Step 2-6: 5 oncap staging models, ~485k raw rows total.
+- Step 7: 2 external staging models (t3010_ident, t3010_schedule3).
+- Step 8: Week 4 retro + Week 5 entry notes (this commit).
+- Step 9: 3 commits.
+
+**Snowflake state at end of Day 7:**
+- 8 staging views (6 oncap + 2 external)
+- 117 data tests, PASS=114 WARN=3 ERROR=0
+
+**3 documented data quality issues (warn-tracked):**
+
+1. transaction_id has 3 duplicates / 186,865 (0.0016%)
+   - Generator bug: same id used for 2 records with different earnings
+   - Configured: severity=warn, error_if >= 10
+   - Backlog: Week 9 polish generator fix
+
+2. pay_period_start is 2% NULL (3,759 / 186,865)
+   - Random across all pay_frequency values
+   - Configured: severity=warn, error_if >= 5000
+   - Backlog: Week 9 polish + mart-layer COALESCE derivation
+
+3. t3010_schedule3 has 8 orphan BNs (not in t3010_ident)
+   - CRA data sync timing issue, 0.02% impact
+   - Configured: severity=warn, error_if >= 100
+   - Backlog: Week 9 polish + cra_t3010 loader reconciliation
+
+**Staging design patterns established (reused across all 8 models):**
+
+A. Case normalization A/B/C taxonomy:
+   - A: enum text -> lower
+   - A': cryptic short codes -> case map to full words (no else)
+   - B: numeric codes -> preserve
+   - C: display free text -> preserve
+
+B. PII metadata pattern: config.meta with contains_pii / pii_type /
+   sensitivity tags (member_census + portal_event)
+
+C. Grain explicit in description, validated by unique tests:
+   - Simple PK: single-column unique
+   - Composite PK: dbt_utils.unique_combination_of_columns
+
+D. Conditional NULL semantics: legitimate business NULLs preserved
+   and documented per-column (life_event buyback columns,
+   t3010_schedule3 line items)
+
+E. SLA-based test severity:
+   - Hard error (default) for invariants
+   - Warn + error_if threshold for known generator bugs
+
+**dbt-utils integration:**
+- unique_combination_of_columns: composite PK validation
+  (member_census, t3010_schedule3)
+- accepted_range: numeric bounds (csat_score 1-5,
+  transaction contributions >= 0)
+
+**Stuck / lessons:**
+- YAML inline annotations broke dbt parser. Mentor message included
+  prose-style "<- new location" markers that got pasted into yaml file.
+  Lesson: code blocks must be paste-ready; comments use yaml `#` syntax.
+- dbt selector syntax confusion. `--select stg_external` didn't work;
+  correct is `--select path:models/staging/external` or wildcard
+  `--select stg_external__*`.
+- test-before-run produces silent ERROR cascade ("Object does not
+  exist"). Need to run model first then test. Order matters.
+- portal_event JSON: VARIANT field has variable schema per event_type.
+  Decision: preserve VARIANT in staging, flatten per-event in mart.
+- T3010 schedule3 column names are numeric (300, 305, ...). Required
+  rename + cast strategy (line_NNN, VARCHAR -> NUMBER).
+- Category dual-format ('30' vs '0030') in t3010_ident solved with
+  ltrim — format normalization not business rule.
+
+**Buffer state:**
+- Day 7 estimated 4-5h, actual ~5h (across 5/23 + 5/25 due to weekend).
+- Buffer +0.2 -> +0.0.
+- Week 4 nominal end Day 7 = 5/23, actual completion 5/25.
+- Net Week 4 timeline: on schedule.
+
+**Next (Week 5):**
+- Macro for pay_frequency case mapping (DRY refactor)
+- Marts layer planning (dim_employer / dim_member / dim_charity /
+  fct_contribution / fct_engagement / fct_portal_session)
+- Possible Snowflake clustering keys for large tables
