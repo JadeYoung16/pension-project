@@ -507,3 +507,64 @@ E. SLA-based test severity:
 - Marts layer planning (dim_employer / dim_member / dim_charity /
   fct_contribution / fct_engagement / fct_portal_session)
 - Possible Snowflake clustering keys for large tables
+
+
+## 2026-05-26 — Week 5 Day 1 (pay_frequency_label macro refactor)
+
+按计划 Week 5 Day 1 = 5/26. 预估 1-2h, 实际 ~1.5h. Buffer 保持 +0.2.
+Week 5 第一个 DRY refactor; mart 层工作的基础设施热身.
+
+**Done:**
+- Step 1-2: 现状审查 + 4 个设计点拍板 (signature / case normalization /
+  unknown value handling / file path). 全选 (a): 接列名参数 / 内置 lower() /
+  无 else 返回 NULL / 扁平 macros/ 目录.
+- Step 3: macros/pay_frequency_label.sql 创建. 32 行 (含 25 行顶部注释).
+  dbt parse 通过.
+- Step 4: stg_oncap__employer_registry refactor. 6 行 case -> 1 行 macro call.
+  dbt compile 验证 SQL 等价.
+- Step 5: stg_oncap__transaction refactor. 同上.
+- Step 6: dbt run -s 两个 staging, 2 of 2 OK.
+- Step 7: dbt test 全项目 PASS=114 WARN=3 ERROR=0 TOTAL=117 — 跟 refactor
+  前 baseline 完全等价. 纯重构验证通过.
+
+**Latent bug fixed during refactor:**
+- stg_oncap__transaction's case 缺少 employer_registry 有的 defensive
+  lower(). transaction generator 当前只写 UPPERCASE 所以不 breaking,
+  但若 generator 改 lowercase (像 employer phase-1->phase-2 那样) 会
+  silent null-out 所有 pay_frequency. Macro 内置 lower() 把 case
+  assumption 集中到一处, 所有 caller 自动获得防御.
+
+**Macro design pattern established (reuse for Week 5+ macros):**
+
+A. Signature: 接列名字符串 (跟 dbt_utils 惯例对齐)
+B. 顶部注释承诺 4 件事: 行为 / 设计意图 / 测试建议 / 现有 callers
+C. 防御性归一化 (lower() / coalesce() / trim()) 内置 macro 体,
+   把"输入格式假设"集中管理而不是 caller 各自处理
+D. 验证三步: dbt parse (语法) -> dbt compile (展开) -> dbt run + test (运行)
+
+**Stuck / lessons:**
+- Compiled SQL whitespace 略丑 (Jinja whitespace control 没用 {%- -%}).
+  决定不修 — Snowflake 不在乎 indent, caller 源文件优美比 compiled 优美
+  重要, whitespace control 容易过度调.
+- 发现新 deprecation warnings (dbt 1.10+ syntax 变化):
+  - MissingArgumentsPropertyInGenericTestDeprecation: 47 occurrences
+  - PropertyMovedToConfigDeprecation: 1 occurrence
+  - 47 个 generic test (relationships / not_null / accepted_values) yaml
+    要从 top-level args 改成 arguments: 子键
+  - 不混入 macro refactor commit. Backlog: Week 5 Day 7 retro cleanup.
+
+**Buffer state:**
+- Day 1 预估 1-2h, 实际 1.5h. 在轨道.
+- Week 5 整体仍按 7-day plan.
+
+**Next (Day 2-3, 5/27-5/28):**
+- Marts 架构决策 — Kimball star vs Inmon 3NF
+- Surrogate key 策略 — dbt_utils.generate_surrogate_key vs natural key
+- Materialization 策略 — dim_* table / fct_* incremental
+- 设计 dim/fct schema layout: dim_employer, dim_member, dim_charity,
+  fct_email_engagement, fct_transaction (tentative list)
+
+**Backlog updates:**
+- [NEW] Week 5 Day 7: dbt yaml deprecation cleanup
+  (MissingArgumentsPropertyInGenericTest x47 + PropertyMovedToConfig x1)
+- [REMOVED] pay_frequency_code -> full word case mapping (DRY) ← done today
