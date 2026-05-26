@@ -58,12 +58,7 @@ renamed as (
         pay_period_end,
 
         -- --- pay frequency (A': map 2-letter code to full word) ------------
-        case pay_frequency_code
-            when 'WK' then 'weekly'
-            when 'BW' then 'biweekly'
-            when 'SM' then 'semimonthly'
-            when 'MO' then 'monthly'
-        end                          as pay_frequency,
+       {{ pay_frequency_label('pay_frequency_code') }} as pay_frequency,
 
         -- --- contribution amounts ------------------------------------------
         pensionable_earnings,
