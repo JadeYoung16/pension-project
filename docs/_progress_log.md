@@ -598,3 +598,44 @@ D. 验证三步: dbt parse (语法) -> dbt compile (展开) -> dbt run + test (�
 - Materialization 4 种 + ~100K incremental 阈值
 - Look-back window (late-arriving + unique_key + merge)
 - SCD type 0/1/2 +
+
+---
+
+## Week 5 Day 3 (5/28)
+
+**Done:**
+- Decision #4 LOCK: per-dimension SCD strategy (4 dim 全部锁)
+  - dim_member SCD2 — 3 SCD0 / 4 SCD2 / 5 SCD1
+  - dim_employer SCD2 — 4 SCD0 / 4 SCD2 / 3 SCD1
+  - dim_charity — yearly partition (charity × fiscal_year), 非 SCD2
+  - dim_date — static, integer YYYYMMDD key, Canadian govt fiscal year (Apr-Mar)
+- **订正 (supersedes Day 2 草拟):** dim_member SCD 最终版与 Day 2 log 不同
+  - Day 2 草拟为 Type2×8 / enrollment_date Type 2
+  - Day 3 逐列重拍后锁定为 4 SCD2 / enrollment_date **Type 1**
+    (允许更正 employer 录入错误)
+  - Day 2 段保留作设计演进记录
+- Event-time semantics + per-fct look-back LOCK (4 incremental, 3 table)
+  - transaction 30d / email_event 7d / email_send 1d / portal 1d
+  - call / seminar / life_event = table 全量重建,免 look-back
+- fct 候选节补全 (Day 2 漏填,本日补回 7 张 fct grain/PK/FK/measure)
+- ER diagram 决策: 不手画,用 Week 6 dbt-docs DAG + 文字文档替代
+  - 理由: DAG 从 model 自动生成、不 drift; 手画图会过时
+  - 监管行业正式 ER 图留作后期交付物 (post-implementation)
+- Open Q: 14 个全 close,但**新增 1 个 [ASSUMPTION]** —
+  re-enrollment 发新 member_id (不复用),记录简化假设 + 重审触发条件
+- _marts_design.md 9 节全满,Week 5–6 mart 层设计 anchor 完成
+- Commit 6950fc6 (docs only)
+
+**Buffer:** +0.2 维持。Day 3 计划 4–5h,实际偏轻 (设计在 Day 2 概念课
+后走得快); 比原计划 5/27 晚一天 (5/28),study schedule 无影响。
+
+**Next (Week 6):** 开始写 dim/fct model SQL — 设计阶段产出的
+_marts_design.md 是实现 anchor,Week 6 是机械落地 + 跑测试。
+
+**Backlog:**
+- [CARRIED] Week 5 Day 7 yaml deprecation cleanup
+  (MissingArgumentsPropertyInGenericTest x47 + PropertyMovedToConfig x1)
+- [CARRIED] docs/00_project_overview.md + 01_plan_design_specification.md
+  长期未提交的 modified — 待处理 (确认内容后单独 commit 或 restore)
+- [RESOLVED] email_event event_timestamp 列 — Day 3 sanity 已确认
+- [DESIGN-LOCKED] dim_charity 建 (现在), transfer 正负号 → Week 6

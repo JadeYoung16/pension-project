@@ -548,3 +548,11 @@ deliverables rather than design-time inputs. Deferred until then.
       `dim_charity` SCD2 vs annual partitions (Day 3)
 - [ ] Mini-dimension (Type 4) — confirmed not needed at current
       scale, revisit if `dim_member` row count exceeds 5M
+- [ASSUMPTION] Re-enrollment issues a **new member_id** (no reuse).
+  Consequence: multiple membership spells of the same natural person
+  are independent members and cannot be aggregated across spells.
+  enrollment_date stays Type 1 (handles employer data-entry
+  corrections). Re-examine trigger: if a "per-person, across
+  membership spells" analytical need arises, change dim_member grain
+  to member × membership spell (add membership_sequence). Deferred —
+  not in Week 5/6 scope.
