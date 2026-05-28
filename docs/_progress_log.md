@@ -568,3 +568,33 @@ D. 验证三步: dbt parse (语法) -> dbt compile (展开) -> dbt run + test (�
 - [NEW] Week 5 Day 7: dbt yaml deprecation cleanup
   (MissingArgumentsPropertyInGenericTest x47 + PropertyMovedToConfig x1)
 - [REMOVED] pay_frequency_code -> full word case mapping (DRY) ← done today
+
+
+## 2026-05-26 — Week 5 Day 2-3 (mart 架构决策 + dim_member SCD 设计)
+
+承接 Day 1 macro refactor,进入 mart 设计阶段。全程设计 + 文档,不写 SQL。
+
+**Done:**
+- 创建 docs/_marts_design.md (mart 层设计 anchor)
+- Decision #1 LOCK: Kimball dimensional modeling (vs Inmon 3NF)
+- Decision #2 LOCK: Surrogate key strategy
+  - MD5 via dbt_utils, naming `<entity>_sk`, natural key 双留
+  - Fct 在 ETL build time 绑 sk (temporal consistency)
+- Decision #3 LOCK: Materialization strategy
+  - stg=view, snapshots=table, dim=table
+  - 大 fct (>100K) = incremental + look-back; 小 fct = table
+- Step 4 候选清单: 4 dim + 7 fct, grain/PK/FK/measure 全列
+  - Conformed dim 矩阵: dim_member + dim_date 100% conformed
+- dim_member SCD 设计完成 (Decision #4 第一张):
+  - Type 0 x2, Type 1 x10, Type 2 x8
+  - 关键: enrollment_date + termination_date 改 Type 2
+    (公司重用 member_id on rehire, 非行业默认 Type 0)
+
+**Concept deep-dive (Day 2 大量时间投入,Day 3+ 回报):**
+- fact/dim 分类 (独立实体 vs 事件本身; 盲盒类比)
+- 建 dim 的真实动机 (去重存储/更新一致/单一来源/SCD2),
+  非 "query 更容易"
+- Surrogate key 机制 (MD5 确定性+雪崩, range vs equality join)
+- Materialization 4 种 + ~100K incremental 阈值
+- Look-back window (late-arriving + unique_key + merge)
+- SCD type 0/1/2 +
