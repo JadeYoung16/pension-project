@@ -274,9 +274,62 @@ if performance or freshness assumptions change.
 ---
 
 <a name="decision-4"></a>
-## Decision #4: SCD strategy per dimension
+**Decision:** SCD strategy assigned per dimension, and per column
+for the two SCD2 dimensions. Locked Week 5 Day 3.
 
-*To be filled — Day 3.*
+### dim_member — SCD2 row-versioning
+
+| Column | SCD type | Reasoning |
+|---|---|---|
+| member_id | 0 | Natural key, immutable |
+| date_of_birth | 0 | Birth date never changes |
+| member_status | 2 | active→terminated must retain history |
+| salary_band | 2 | Raises/cuts versioned so facts bind correct period |
+| employer_id | 2 | Employer change must retain history |
+| marital_status | 2 | Status change must retain history |
+| enrollment_date | 1 | Type 0 in principle, but allow correction of data-entry errors |
+| first_name, last_name | 1 | Name change — latest value only |
+| email | 1 | Latest value only |
+| postal_code | 1 | Move — latest value only |
+| gender | 1 | Overwrite |
+
+Summary: 3 SCD0 / 4 SCD2 / 5 SCD1.
+
+### dim_employer — SCD2 row-versioning
+
+| Column | SCD type | Reasoning |
+|---|---|---|
+| employer_id | 0 | Natural key |
+| business_number | 0 | CRA business number, fixed identifier |
+| participation_start_date | 0 | Plan-join date, historical fact |
+| acquisition fields | 0 | Historical M&A facts |
+| employer_status | 2 | active→withdrawn must retain history |
+| size_band | 2 | Band changes must retain history |
+| sector_category_code | 2 | Sector reclassification must retain history |
+| pay_frequency | 2 | Affects transaction interpretation, versioned |
+| legal / operating name | 1 | Latest value only |
+| administrator info | 1 | Overwrite |
+| city, postal_code | 1 | Relocation — latest value only |
+
+Summary: 4 SCD0 / 4 SCD2 / 3 SCD1.
+
+### dim_charity — Yearly partition (not SCD2)
+
+Grain: one row per charity per fiscal year. PK: MD5(bn_number +
+fiscal_year_end). CRA T3010 data is an annual filing whose measures
+(revenue, expenses, assets) change every year; SCD2 would collapse
+into a yearly partition anyway but at higher query cost (range join
+vs `where fiscal_year = N` equality filter). Source is annual by
+nature, so the dimension partitions by year to match.
+
+### dim_date — Static, no versioning
+
+Generated via `dbt_utils.date_spine`; no source table, no version
+changes. PK: integer smart key `YYYYMMDD` (the one Kimball-sanctioned
+meaningful key — immutable, human-readable, no SCD2 dedup need so the
+Decision #2 MD5 rule does not apply here). Fiscal year/quarter follow
+Canadian government year (Apr 1 – Mar 31), aligning with CRA and
+regulatory reporting.
 
 ---
 
@@ -328,24 +381,159 @@ if performance or freshness assumptions change.
 ---
 
 <a name="fct-candidates"></a>
-## Candidate fact tables
+**Status:** Drafted Week 5 Day 2, event-time semantics and
+per-fact look-back finalized Day 3.
 
-*To be filled — Day 2 Step 4.*
+### Overview
+
+| Fct | Grain | Est. rows | Materialization | Late-arriving |
+|---|---|---|---|---|
+| fct_transaction | One pension contribution/withdrawal/transfer | 190K+ | incremental | 30d |
+| fct_email_send | One email send event | 227K+ | incremental | 1d |
+| fct_email_event | One email interaction (open/click/etc.) | ~400K+ | incremental | 7d |
+| fct_portal_event | One portal user action | 58K+ | incremental | 1d |
+| fct_call | One customer service call | 4K | table | — |
+| fct_seminar_attendance | One member-seminar attendance | 6K | table | — |
+| fct_life_event | One member life event | 18K | table | — |
+
+### fct_transaction
+- **Grain:** One pension contribution / withdrawal / transfer event
+- **PK:** transaction_sk (MD5 of transaction_id)
+- **FK:** member_sk, employer_sk, event_date_sk
+- **Measures:** amount_cad, employee_contribution_cad, employer_contribution_cad
+- **Degenerate dims:** transaction_type, pay_period_end_date, pay_frequency
+- **Event-time:** event_date = pay_period_end_date
+- **Materialization:** incremental, 30-day look-back
+- **Open Q (Week 6):** transfer-in vs transfer-out sign convention
+
+### fct_email_send
+- **Grain:** One email send event (separate from open/click)
+- **PK:** email_send_sk
+- **FK:** member_sk, event_date_sk
+- **Measures:** 1 (count)
+- **Degenerate dims:** campaign_id, email_template_id, delivery_status
+- **Event-time:** sent_at
+- **Materialization:** incremental, 1-day look-back
+- **Note:** campaign_id kept as DD; revisit dim_email_campaign in Week 6 if campaign attributes emerge
+
+### fct_email_event
+- **Grain:** One email interaction (open, click, unsubscribe, bounce)
+- **PK:** email_event_sk
+- **FK:** email_send_sk (link to fct_email_send), member_sk, event_date_sk
+- **Measures:** 1 (count); time_since_send_minutes (derived)
+- **Degenerate dims:** event_type, click_url
+- **Event-time:** event_timestamp
+- **Materialization:** incremental, 7-day look-back
+- **Open Q (Week 6):** multiple opens per send — keep all (true measure) or dedupe to first
+
+### fct_portal_event
+- **Grain:** One portal user action (login, view, calculator, etc.)
+- **PK:** portal_event_sk
+- **FK:** member_sk, event_date_sk
+- **Measures:** 1 (count)
+- **Degenerate dims:** event_type, page_path, ip_hash, user_agent
+- **Event-time:** event_timestamp
+- **Materialization:** incremental, 1-day look-back (pre-emptive despite 58K size, given portal growth rate)
+- **Open Q (Week 6):** flatten event_properties VARIANT or keep raw
+
+### fct_call
+- **Grain:** One customer service call
+- **PK:** call_sk
+- **FK:** member_sk, event_date_sk
+- **Measures:** call_duration_sec
+- **Degenerate dims:** call_topic, call_outcome, agent_id
+- **Event-time:** call_started_at
+- **Materialization:** table (4K rows, full rebuild trivial)
+- **Note:** agent_id kept as DD (no stable describable attributes)
+
+### fct_seminar_attendance
+- **Grain:** One member-seminar attendance event
+- **PK:** seminar_attendance_sk (MD5 of member_id + seminar_id)
+- **FK:** member_sk, event_date_sk
+- **Measures:** 1 (count)
+- **Degenerate dims:** seminar_id, seminar_topic, delivery_mode
+- **Event-time:** seminar_date
+- **Materialization:** table (6K rows)
+- **Note:** seminar_id kept as DD
+
+### fct_life_event
+- **Grain:** One member life event (marriage, birth, divorce, job change)
+- **PK:** life_event_sk
+- **FK:** member_sk, event_date_sk
+- **Measures:** 1 (count)
+- **Degenerate dims:** event_category, reporting_channel
+- **Event-time:** event_date (often event_date ≪ loaded_at)
+- **Materialization:** table (18K rows). Most late-arriving fact in the project; deliberately chose table over incremental to sidestep look-back complexity while size remains small.
 
 ---
 
 <a name="event-time"></a>
-## Event-time semantics & late-arriving handling
+**Three-tier time model.** Every fact distinguishes:
+- **Event-time** — when the real-world event happened (e.g.
+  `pay_period_end_date`, `event_timestamp`). This is the time used
+  for `event_date_sk` and for incremental look-back.
+- **Received-time** — when the source system recorded it.
+- **Loaded-time** (`loaded_at`) — when our pipeline ingested it.
 
-*To be filled — Day 3. See concept discussion in Week 5 Day 2 chat
-for full taxonomy (3-tier event-time data quality framework).*
+For late-arriving data, `event_time ≪ loaded_time`. Incremental
+models must therefore look back from `max(event_date)` rather than
+filter on load time, or late rows are silently dropped.
 
+**Look-back window** applies only to incremental facts. Table-materialized
+facts rebuild fully each run, so late-arriving rows are re-scanned
+automatically — no window needed.
+
+| Fct | Materialization | Event-time column | Look-back | Reasoning |
+|---|---|---|---|---|
+| fct_transaction | incremental | pay_period_end_date | 30d | Employer late/adjusted remittances; covers a full pay + reconciliation cycle |
+| fct_email_event | incremental | event_timestamp | 7d | Opens/clicks reported with delay; covers the long tail |
+| fct_email_send | incremental | sent_at | 1d | System-logged on send, rarely late; guards cross-midnight boundary |
+| fct_portal_event | incremental | event_timestamp | 1d | Real-time clickstream; guards cross-midnight boundary |
+| fct_call | table | call_started_at | — | Full rebuild, no window |
+| fct_seminar_attendance | table | seminar_date | — | Full rebuild, no window |
+| fct_life_event | table | event_date | — | Most late-arriving fact (members report marriages/births months later), but 18K rows — table full rebuild sidesteps look-back entirely |
+
+**Incremental filter pattern (Week 6 implementation):**
+```sql
+{% if is_incremental() %}
+  where event_date >= (
+    select dateadd(day, -<lookback>, max(event_date)) from {{ this }}
+  )
+{% endif %}
+```
 ---
 
 <a name="er-diagram"></a>
 ## ER diagram
 
-*To be filled — Day 3. Tool: DBML or Mermaid (decision pending).*
+<a name="er-diagram"></a>
+## ER diagram
+
+**Approach:** No hand-drawn ER diagram is maintained in this repo.
+
+**Rationale:** In a dbt-based stack, the authoritative structural
+view is the lineage DAG produced by `dbt docs generate`, which is
+derived directly from `ref()`/`source()` dependencies in the model
+SQL. A machine-derived DAG stays consistent with code by
+construction; a hand-drawn diagram (Mermaid/DBML) is manually
+maintained and drifts as models change. Maintaining one would add a
+stale-prone artifact rather than a source of truth.
+
+**Where structure lives instead:**
+- **Dimensional semantics** (which tables are dim vs fct, grain,
+  conformed-dimension relationships) — captured in the *Candidate
+  dimension tables* and *Candidate fact tables* sections above, plus
+  per-model `description` fields landed in Week 6.
+- **Dependency structure** (who refs whom) — auto-generated as a
+  lineage DAG via `dbt docs generate` once models exist (Week 6).
+  This is the project's "ER diagram" equivalent and updates
+  automatically with the code.
+
+**Note:** A formal, hand-produced ER diagram may be added late in the
+project (post-implementation) if needed as a delivery/review artifact
+for non-technical or compliance audiences — consistent with how
+regulated-industry data teams treat ER diagrams as review
+deliverables rather than design-time inputs. Deferred until then.
 
 ---
 
