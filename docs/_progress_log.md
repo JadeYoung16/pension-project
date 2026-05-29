@@ -507,3 +507,135 @@ E. SLA-based test severity:
 - Marts layer planning (dim_employer / dim_member / dim_charity /
   fct_contribution / fct_engagement / fct_portal_session)
 - Possible Snowflake clustering keys for large tables
+
+
+## 2026-05-26 — Week 5 Day 1 (pay_frequency_label macro refactor)
+
+按计划 Week 5 Day 1 = 5/26. 预估 1-2h, 实际 ~1.5h. Buffer 保持 +0.2.
+Week 5 第一个 DRY refactor; mart 层工作的基础设施热身.
+
+**Done:**
+- Step 1-2: 现状审查 + 4 个设计点拍板 (signature / case normalization /
+  unknown value handling / file path). 全选 (a): 接列名参数 / 内置 lower() /
+  无 else 返回 NULL / 扁平 macros/ 目录.
+- Step 3: macros/pay_frequency_label.sql 创建. 32 行 (含 25 行顶部注释).
+  dbt parse 通过.
+- Step 4: stg_oncap__employer_registry refactor. 6 行 case -> 1 行 macro call.
+  dbt compile 验证 SQL 等价.
+- Step 5: stg_oncap__transaction refactor. 同上.
+- Step 6: dbt run -s 两个 staging, 2 of 2 OK.
+- Step 7: dbt test 全项目 PASS=114 WARN=3 ERROR=0 TOTAL=117 — 跟 refactor
+  前 baseline 完全等价. 纯重构验证通过.
+
+**Latent bug fixed during refactor:**
+- stg_oncap__transaction's case 缺少 employer_registry 有的 defensive
+  lower(). transaction generator 当前只写 UPPERCASE 所以不 breaking,
+  但若 generator 改 lowercase (像 employer phase-1->phase-2 那样) 会
+  silent null-out 所有 pay_frequency. Macro 内置 lower() 把 case
+  assumption 集中到一处, 所有 caller 自动获得防御.
+
+**Macro design pattern established (reuse for Week 5+ macros):**
+
+A. Signature: 接列名字符串 (跟 dbt_utils 惯例对齐)
+B. 顶部注释承诺 4 件事: 行为 / 设计意图 / 测试建议 / 现有 callers
+C. 防御性归一化 (lower() / coalesce() / trim()) 内置 macro 体,
+   把"输入格式假设"集中管理而不是 caller 各自处理
+D. 验证三步: dbt parse (语法) -> dbt compile (展开) -> dbt run + test (运行)
+
+**Stuck / lessons:**
+- Compiled SQL whitespace 略丑 (Jinja whitespace control 没用 {%- -%}).
+  决定不修 — Snowflake 不在乎 indent, caller 源文件优美比 compiled 优美
+  重要, whitespace control 容易过度调.
+- 发现新 deprecation warnings (dbt 1.10+ syntax 变化):
+  - MissingArgumentsPropertyInGenericTestDeprecation: 47 occurrences
+  - PropertyMovedToConfigDeprecation: 1 occurrence
+  - 47 个 generic test (relationships / not_null / accepted_values) yaml
+    要从 top-level args 改成 arguments: 子键
+  - 不混入 macro refactor commit. Backlog: Week 5 Day 7 retro cleanup.
+
+**Buffer state:**
+- Day 1 预估 1-2h, 实际 1.5h. 在轨道.
+- Week 5 整体仍按 7-day plan.
+
+**Next (Day 2-3, 5/27-5/28):**
+- Marts 架构决策 — Kimball star vs Inmon 3NF
+- Surrogate key 策略 — dbt_utils.generate_surrogate_key vs natural key
+- Materialization 策略 — dim_* table / fct_* incremental
+- 设计 dim/fct schema layout: dim_employer, dim_member, dim_charity,
+  fct_email_engagement, fct_transaction (tentative list)
+
+**Backlog updates:**
+- [NEW] Week 5 Day 7: dbt yaml deprecation cleanup
+  (MissingArgumentsPropertyInGenericTest x47 + PropertyMovedToConfig x1)
+- [REMOVED] pay_frequency_code -> full word case mapping (DRY) ← done today
+
+
+## 2026-05-26 — Week 5 Day 2-3 (mart 架构决策 + dim_member SCD 设计)
+
+承接 Day 1 macro refactor,进入 mart 设计阶段。全程设计 + 文档,不写 SQL。
+
+**Done:**
+- 创建 docs/_marts_design.md (mart 层设计 anchor)
+- Decision #1 LOCK: Kimball dimensional modeling (vs Inmon 3NF)
+- Decision #2 LOCK: Surrogate key strategy
+  - MD5 via dbt_utils, naming `<entity>_sk`, natural key 双留
+  - Fct 在 ETL build time 绑 sk (temporal consistency)
+- Decision #3 LOCK: Materialization strategy
+  - stg=view, snapshots=table, dim=table
+  - 大 fct (>100K) = incremental + look-back; 小 fct = table
+- Step 4 候选清单: 4 dim + 7 fct, grain/PK/FK/measure 全列
+  - Conformed dim 矩阵: dim_member + dim_date 100% conformed
+- dim_member SCD 设计完成 (Decision #4 第一张):
+  - Type 0 x2, Type 1 x10, Type 2 x8
+  - 关键: enrollment_date + termination_date 改 Type 2
+    (公司重用 member_id on rehire, 非行业默认 Type 0)
+
+**Concept deep-dive (Day 2 大量时间投入,Day 3+ 回报):**
+- fact/dim 分类 (独立实体 vs 事件本身; 盲盒类比)
+- 建 dim 的真实动机 (去重存储/更新一致/单一来源/SCD2),
+  非 "query 更容易"
+- Surrogate key 机制 (MD5 确定性+雪崩, range vs equality join)
+- Materialization 4 种 + ~100K incremental 阈值
+- Look-back window (late-arriving + unique_key + merge)
+- SCD type 0/1/2 +
+
+---
+
+## Week 5 Day 3 (5/28)
+
+**Done:**
+- Decision #4 LOCK: per-dimension SCD strategy (4 dim 全部锁)
+  - dim_member SCD2 — 3 SCD0 / 4 SCD2 / 5 SCD1
+  - dim_employer SCD2 — 4 SCD0 / 4 SCD2 / 3 SCD1
+  - dim_charity — yearly partition (charity × fiscal_year), 非 SCD2
+  - dim_date — static, integer YYYYMMDD key, Canadian govt fiscal year (Apr-Mar)
+- **订正 (supersedes Day 2 草拟):** dim_member SCD 最终版与 Day 2 log 不同
+  - Day 2 草拟为 Type2×8 / enrollment_date Type 2
+  - Day 3 逐列重拍后锁定为 4 SCD2 / enrollment_date **Type 1**
+    (允许更正 employer 录入错误)
+  - Day 2 段保留作设计演进记录
+- Event-time semantics + per-fct look-back LOCK (4 incremental, 3 table)
+  - transaction 30d / email_event 7d / email_send 1d / portal 1d
+  - call / seminar / life_event = table 全量重建,免 look-back
+- fct 候选节补全 (Day 2 漏填,本日补回 7 张 fct grain/PK/FK/measure)
+- ER diagram 决策: 不手画,用 Week 6 dbt-docs DAG + 文字文档替代
+  - 理由: DAG 从 model 自动生成、不 drift; 手画图会过时
+  - 监管行业正式 ER 图留作后期交付物 (post-implementation)
+- Open Q: 14 个全 close,但**新增 1 个 [ASSUMPTION]** —
+  re-enrollment 发新 member_id (不复用),记录简化假设 + 重审触发条件
+- _marts_design.md 9 节全满,Week 5–6 mart 层设计 anchor 完成
+- Commit 6950fc6 (docs only)
+
+**Buffer:** +0.2 维持。Day 3 计划 4–5h,实际偏轻 (设计在 Day 2 概念课
+后走得快); 比原计划 5/27 晚一天 (5/28),study schedule 无影响。
+
+**Next (Week 6):** 开始写 dim/fct model SQL — 设计阶段产出的
+_marts_design.md 是实现 anchor,Week 6 是机械落地 + 跑测试。
+
+**Backlog:**
+- [CARRIED] Week 5 Day 7 yaml deprecation cleanup
+  (MissingArgumentsPropertyInGenericTest x47 + PropertyMovedToConfig x1)
+- [CARRIED] docs/00_project_overview.md + 01_plan_design_specification.md
+  长期未提交的 modified — 待处理 (确认内容后单独 commit 或 restore)
+- [RESOLVED] email_event event_timestamp 列 — Day 3 sanity 已确认
+- [DESIGN-LOCKED] dim_charity 建 (现在), transfer 正负号 → Week 6

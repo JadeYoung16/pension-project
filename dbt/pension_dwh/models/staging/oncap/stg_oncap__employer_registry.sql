@@ -51,12 +51,7 @@ renamed as (
         lower(employer_size_band)  as size_band,           -- A: UPPER→lower
 
         -- A': map 2-letter code to full word
-        case lower(pay_frequency)
-            when 'wk' then 'weekly'
-            when 'bw' then 'biweekly'
-            when 'sm' then 'semimonthly'
-            when 'mo' then 'monthly'
-        end                        as pay_frequency,
+        {{ pay_frequency_label('pay_frequency') }} as pay_frequency,
 
         lower(status)              as employer_status,     -- A: UPPER→lower
 
