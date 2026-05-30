@@ -20,6 +20,25 @@ jobs:
       - name: Install dbt-snowflake
         run: pip install dbt-snowflake==1.11.5
 
+      - name: Create dummy profiles.yml for parse
+        run: |
+          mkdir -p ~/.dbt
+          cat > ~/.dbt/profiles.yml <<EOF
+          pension_dwh:
+            target: ci
+            outputs:
+              ci:
+                type: snowflake
+                account: dummy-account
+                user: dummy-user
+                password: dummy-password
+                role: dummy-role
+                database: dummy-db
+                warehouse: dummy-wh
+                schema: dummy-schema
+                threads: 1
+          EOF
+
       - name: Run dbt parse
         working-directory: dbt/pension_dwh
         run: dbt parse
