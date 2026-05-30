@@ -38,6 +38,9 @@ jobs:
                 schema: dummy-schema
                 threads: 1
           EOF
+      - name: Install dbt packages
+              working-directory: dbt/pension_dwh
+              run: dbt deps
 
       - name: Run dbt parse
         working-directory: dbt/pension_dwh
