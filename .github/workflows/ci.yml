@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  dbt-parse:
+    name: dbt parse (syntax check)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dbt-snowflake
+        run: pip install dbt-snowflake==1.11.5
+
+      - name: Create dummy profiles.yml for parse
+        run: |
+          mkdir -p ~/.dbt
+          cat > ~/.dbt/profiles.yml <<EOF
+          pension_dwh:
+            target: ci
+            outputs:
+              ci:
+                type: snowflake
+                account: dummy-account
+                user: dummy-user
+                password: dummy-password
+                role: dummy-role
+                database: dummy-db
+                warehouse: dummy-wh
+                schema: dummy-schema
+                threads: 1
+          EOF
+
+      - name: Install dbt packages
+        working-directory: dbt/pension_dwh
+        run: dbt deps
+
+      - name: Run dbt parse
+        working-directory: dbt/pension_dwh
+        run: dbt parse
