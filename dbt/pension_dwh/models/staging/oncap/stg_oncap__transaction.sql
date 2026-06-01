@@ -58,7 +58,7 @@ renamed as (
         pay_period_end,
 
         -- --- pay frequency (A': map 2-letter code to full word) ------------
-       {{ pay_frequency_label('pay_frequency_code') }} as pay_frequency,
+       {{ pay_frequency_label('pay_frequency_code') }} as pay_frequency,  -- noqa: LT02,TMP,PRS
 
         -- --- contribution amounts ------------------------------------------
         pensionable_earnings,

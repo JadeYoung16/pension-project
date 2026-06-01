@@ -51,7 +51,7 @@ renamed as (
         lower(employer_size_band)  as size_band,           -- A: UPPER→lower
 
         -- A': map 2-letter code to full word
-        {{ pay_frequency_label('pay_frequency') }} as pay_frequency,
+        {{ pay_frequency_label('pay_frequency') }} as pay_frequency,  -- noqa: LT02,TMP,PRS
 
         lower(status)              as employer_status,     -- A: UPPER→lower
 
