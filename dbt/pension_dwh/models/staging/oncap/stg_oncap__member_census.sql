@@ -44,10 +44,10 @@ source as (
 latest_snapshot as (
 
     select *
-    from source
-    where _source_file = (
+    from source  -- noqa: AL04
+    where _source_file = (  -- noqa: RF02
         -- Latest snapshot file by name (e.g. _20240131 > _20231231 lexicographically)
-        select max(_source_file) from source
+        select max(_source_file) from source  -- noqa: RF02
     )
 
 ),
@@ -84,7 +84,7 @@ renamed as (
         province,
         postal_code,
         nullif(phone, '')            as phone,
-        nullif(email, '')            as email,
+        nullif(email, '')            as email_address,  -- noqa: RF04
 
         -- --- employment ----------------------------------------------------
         hire_date,
@@ -113,7 +113,7 @@ renamed as (
 
         -- --- audit pass-through --------------------------------------------
         _source_file        as source_file,
-        _row_num            as source_row_num,
+        _row_num            as source_row_num,  
         _loaded_at          as loaded_at
 
     from latest_snapshot

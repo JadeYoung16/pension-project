@@ -42,7 +42,7 @@ renamed as (
 
         -- --- location (C: city names, display-bound, preserved) ------------
         seminar_location,                                            -- C: Toronto, Kingston, etc.
-                                                                     -- 'Virtual' when format=virtual
+                                                                     -- 'Virtual' when format=virtual  -- noqa: LT02
 
         -- --- attendance flag (Y/N preserved, only 2 values) ----------------
         attended_flag,

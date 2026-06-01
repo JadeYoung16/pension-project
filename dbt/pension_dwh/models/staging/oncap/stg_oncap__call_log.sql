@@ -31,7 +31,7 @@ renamed as (
         call_id,
         member_id,                                         -- FK (member_census)
         agent_id,                                          -- FK to call-center agent
-                                                           -- (no agent dim table; preserved as semi-structured ID)
+                                                           -- (no agent dim table; preserved as semi-structured ID)  -- noqa: LT02
 
         -- --- temporal ------------------------------------------------------
         call_timestamp,                                    -- already TIMESTAMP_TZ

@@ -5,8 +5,8 @@ on:
     branches: [main]
 
 jobs:
-  dbt-parse:
-    name: dbt parse (syntax check)
+  dbt-checks:
+    name: dbt parse + sqlfluff lint
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -19,6 +19,9 @@ jobs:
 
       - name: Install dbt-snowflake
         run: pip install dbt-snowflake==1.11.5
+
+      - name: Install sqlfluff
+        run: pip install sqlfluff==4.2.1 sqlfluff-templater-dbt==4.2.1
 
       - name: Create dummy profiles.yml for parse
         run: |
@@ -46,3 +49,7 @@ jobs:
       - name: Run dbt parse
         working-directory: dbt/pension_dwh
         run: dbt parse
+
+      - name: Run sqlfluff lint
+        working-directory: dbt/pension_dwh
+        run: sqlfluff lint models/
