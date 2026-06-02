@@ -44,12 +44,16 @@
 | 13 | `plan_administrator_name` | string | Y   | HR contact name                                   |
 | 14 | `plan_administrator_email` | string | Y  | HR contact email                                  |
 | 15 | `status`                 | string  | Y   | `ACTIVE` / `WITHDRAWN`                            |
+| 16 | `acquisition_channel`     | string  | Y   | `outbound` / `referral` / `inbound` / `event` / `partnership` |
+| 17 | `prospect_source`         | string  | Y   | Lead origin: `t3010_outbound_list` / `referral_existing_employer` / `conference` / `broker` / `inbound_web` / `chamber_of_commerce` |
+| 18 | `first_contact_date`      | date    | Y   | ISO `YYYY-MM-DD`, channel-driven sales cycle before `participation_start_date` (range 30-540 days depending on channel) |
 
 ### Example
 
 ```
 employer_id,business_number,legal_name,operating_name,sector_category_code,city,postal_code,employer_size_band,employee_count,enrolled_member_count,pay_frequency,participation_start_date,plan_administrator_name,plan_administrator_email,status
 EMP0000001,123456789RR0001,"Ontario Community Services Network","ONCS Network",120,Toronto,M5V3A8,LARGE,850,520,BW,2019-04-15,Sarah Thompson,sarah.thompson@oncs.ca,ACTIVE
+EMP0000001,123456789RR0001,"Ontario Community Services Network","ONCS Network",120,Toronto,M5V3A8,LARGE,850,520,BW,2019-04-15,Sarah Thompson,sarah.thompson@oncs.ca,ACTIVE,outbound,t3010_outbound_list,2018-06-20
 ```
 
 ---
