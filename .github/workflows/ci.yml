@@ -6,7 +6,7 @@ on:
 
 jobs:
   dbt-checks:
-    name: dbt parse + sqlfluff lint
+    name: dbt parse + compile + sqlfluff lint
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -29,7 +29,6 @@ jobs:
           cat > ~/.dbt/profiles.yml <<EOF
           pension_dwh:
             target: ci
-            outputs:
               ci:
                 type: snowflake
                 account: dummy-account
