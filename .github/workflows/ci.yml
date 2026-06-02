@@ -29,6 +29,7 @@ jobs:
           cat > ~/.dbt/profiles.yml <<EOF
           pension_dwh:
             target: ci
+            outputs:
               ci:
                 type: snowflake
                 account: dummy-account
