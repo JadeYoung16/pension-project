@@ -67,3 +67,14 @@ models:
 
       oncap:
         +schema: mart_oncap
+
+# -----------------------------------------------------------------------------
+# Snapshot configuration
+# -----------------------------------------------------------------------------
+# Snapshots capture SCD Type 2 history from raw source tables.
+# All snapshots land in the snapshots_oncap schema.
+# -----------------------------------------------------------------------------
+snapshots:
+  pension_dwh:
+    +target_schema: snapshots_oncap
+  
