@@ -1,0 +1,81 @@
+version: 2
+
+models:
+  - name: dim_member
+    description: "SCD Type 2 member dimension. One row per member per validity window."
+
+    columns:
+      - name: member_sk
+        description: "Surrogate key (from dbt_scd_id). Used for fact table joins."
+        data_tests:
+          - unique
+          - not_null
+
+      - name: member_id
+        description: "Natural key. Multiple rows per member across SCD2 windows."
+        data_tests:
+          - not_null
+
+      - name: employer_id
+        data_tests:
+          - not_null
+
+      - name: status_code
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['A', 'D', 'R', 'T', 'S']
+
+      - name: status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Active', 'Deferred', 'Retired', 'Terminated', 'Survivor']
+
+      - name: sex_code
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['1', '2', '9']
+
+      - name: sex
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Male', 'Female', 'Not stated']
+
+      - name: marital_status_code
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['S', 'M', 'D', 'W', 'U']
+
+      - name: marital_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Single', 'Married', 'Divorced', 'Widowed', 'Unknown']
+
+      - name: salary_band_code
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['EN', 'MD', 'SR', 'EX']
+
+      - name: salary_band
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Entry', 'Mid', 'Senior', 'Executive']
+
+      - name: valid_from
+        data_tests:
+          - not_null
