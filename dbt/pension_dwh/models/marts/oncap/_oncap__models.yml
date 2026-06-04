@@ -141,3 +141,27 @@ models:
       - name: valid_from
         data_tests:
           - not_null      
+
+  - name: dim_date
+    description: "Static date dimension generated via dbt_utils.date_spine (no source). Canadian government fiscal year (Apr 1 – Mar 31)."
+
+    columns:
+      - name: date_sk
+        description: "Smart integer PK (YYYYMMDD). Decision #2 MD5 exception — date is immutable, unique, no SCD2 versioning."
+        data_tests:
+          - unique
+          - not_null
+
+      - name: date_value
+        description: "Natural key. One row per calendar day."
+        data_tests:
+          - unique
+          - not_null
+          
+      - name: fiscal_quarter
+        description: "Canadian government fiscal quarter (Q1 = Apr-Jun)."
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [1, 2, 3, 4]
