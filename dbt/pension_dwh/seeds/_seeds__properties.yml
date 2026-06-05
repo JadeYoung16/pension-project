@@ -1,0 +1,16 @@
+version: 2
+
+seeds:
+  - name: cra_sector_category
+    description: "CRA T3010 category code-to-label lookup (30 codes). Source: CRA Open Data 'List of charities — Codes Lists' v1.0 (2021-05-26), section 2.1 Categories. Codes stored leading-zero-stripped to match staging ltrim normalization (e.g. 0030 -> 30)."
+
+    columns:
+      - name: sector_category_code
+        description: "CRA category code, leading zeros stripped (integer). Natural key for joins from dim_employer.sector_category_code."
+        data_tests:
+          - unique
+          - not_null
+      - name: sector_category_label
+        description: "Official CRA English category name."
+        data_tests:
+          - not_null

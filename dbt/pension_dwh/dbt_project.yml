@@ -77,4 +77,10 @@ models:
 snapshots:
   pension_dwh:
     +target_schema: snapshots_oncap
-  
+
+seeds:
+  pension_dwh:
+    cra_sector_category:
+      +column_types:
+        sector_category_code: integer
+        sector_category_label: varchar

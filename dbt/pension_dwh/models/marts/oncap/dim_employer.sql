@@ -56,6 +56,19 @@ renamed as (
 
     from snapshot_source
 
+),
+
+with_sector_label as (
+
+    select
+        r.*,
+        -- sector label (lookup from seed; left join 保留无匹配/NULL code 的行)
+        s.sector_category_label as sector_category
+
+    from renamed r
+    left join {{ ref('cra_sector_category') }} s
+        on r.sector_category_code = s.sector_category_code
+
 )
 
-select * from renamed
+select * from with_sector_label
