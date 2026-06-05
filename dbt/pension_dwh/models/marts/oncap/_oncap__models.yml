@@ -76,6 +76,10 @@ models:
               arguments:
                 values: ['Entry', 'Mid', 'Senior', 'Executive']
 
+      - name: valid_from
+        data_tests:
+          - not_null
+
   - name: dim_employer
     description: "SCD Type 2 employer dimension. One row per employer per validity window."
 
@@ -140,28 +144,47 @@ models:
 
       - name: valid_from
         data_tests:
-          - not_null      
+          - not_null
 
-  - name: dim_date
-    description: "Static date dimension generated via dbt_utils.date_spine (no source). Canadian government fiscal year (Apr 1 – Mar 31)."
-
+  - name: dim_charity
+    description: >
+      Charity dimension from CRA T3010 Open Data. Grain: one row per
+      charity per fiscal period end (BN + FPE). Yearly-partition pattern
+      (not SCD2). Currently single-year (2023) snapshot; PK structured
+      to support multi-year extension. Orphan dimension — external data
+      showcase, no fact currently joins to it.
     columns:
-      - name: date_sk
-        description: "Smart integer PK (YYYYMMDD). Decision #2 MD5 exception — date is immutable, unique, no SCD2 versioning."
+      - name: charity_sk
+        description: Surrogate key, MD5(business_number + fiscal_period_end).
         data_tests:
           - unique
           - not_null
 
-      - name: date_value
-        description: "Natural key. One row per calendar day."
-        data_tests:
-          - unique
-          - not_null
-          
-      - name: fiscal_quarter
-        description: "Canadian government fiscal quarter (Q1 = Apr-Jun)."
+      - name: business_number
+        description: CRA business number (natural key).
         data_tests:
           - not_null
-          - accepted_values:
-              arguments:
-                values: [1, 2, 3, 4]
+
+      - name: fiscal_period_end
+        description: Fiscal period end date; second half of grain.
+        data_tests:
+          - not_null
+
+      - name: fiscal_year
+        description: Year extracted from FPE; yearly-partition key.
+        data_tests:
+          - not_null
+
+      - name: sector_category_code
+        description: CRA category code (leading zeros stripped), FK to sector seed.
+        data_tests:
+          - relationships:
+              to: ref('cra_sector_category')
+              field: sector_category_code
+
+      - name: legal_name
+        description: Charity legal name from ident; ~8 rows NULL (identity record absent).
+        data_tests:
+          - not_null:
+              config:
+                severity: warn
