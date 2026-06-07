@@ -188,3 +188,63 @@ models:
           - not_null:
               config:
                 severity: warn
+                
+  - name: fct_transaction
+    description: >
+      Pension contribution fact. Grain: one contribution event
+      (deduplicated by transaction_id, keeping earliest source_row_num).
+      Includes rejected (rj) transactions — filter via transaction_status.
+      SK bound at ETL time via point-in-time join; lower bound relaxed
+      pending snapshot valid_from fix (see tech debt).
+    columns:
+      - name: transaction_id
+        description: Natural key / PK. Grain guard.
+        data_tests:
+          - unique
+          - not_null
+
+      - name: member_sk
+        description: FK to dim_member (point-in-time). Rare NULL = orphan txn.
+        data_tests:
+          - relationships:
+              to: ref('dim_member')
+              field: member_sk
+          - not_null:
+              config:
+                severity: warn
+
+      - name: employer_sk
+        description: FK to dim_employer (point-in-time).
+        data_tests:
+          - relationships:
+              to: ref('dim_employer')
+              field: employer_sk
+          - not_null:
+              config:
+                severity: warn
+
+      - name: event_date_sk
+        description: FK to dim_date (pay_period_end as YYYYMMDD).
+        data_tests:
+          - relationships:
+              to: ref('dim_date')
+              field: date_sk
+          - not_null
+
+      - name: member_contribution
+        description: Member contribution amount (CAD). Additive.
+        data_tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+
+      - name: employer_contribution
+        description: Employer contribution amount (CAD). Additive.
+        data_tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+
+      - name: transaction_status
+        description: ok / rj. Degenerate dim; rj retained for analysis.
+        data_tests:
+          - accepted_values:
+              values: ['ok', 'rj']

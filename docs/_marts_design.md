@@ -556,3 +556,19 @@ deliverables rather than design-time inputs. Deferred until then.
   membership spells" analytical need arises, change dim_member grain
   to member × membership spell (add membership_sequence). Deferred —
   not in Week 5/6 scope.
+
+
+  ### Tech debt: SCD2 snapshot valid_from semantics
+- **Issue:** Snapshots use `check` strategy → `dbt_valid_from` = snapshot
+  run timestamp (2026-06), not business-effective date. All historical
+  facts (2023-24) predate it, so a strict point-in-time join
+  (`event_date >= valid_from`) matches zero rows.
+- **Current mitigation:** All dims are single-version (no change captured
+  yet), so fct range joins relax the lower bound and use `< valid_to`
+  only. Correct under single-version; equals "join current version".
+- **When this breaks:** First time a dim attribute changes and a second
+  version appears, `< valid_to` alone matches multiple versions → fct row
+  fan-out. Must restore `event_date >= valid_from`.
+- **Proper fix (Week 8+):** Switch snapshot to `timestamp` strategy keyed
+  on a business-effective date column, OR backfill valid_from from source
+  history. Deferred — no multi-version data exists to justify the rework.
