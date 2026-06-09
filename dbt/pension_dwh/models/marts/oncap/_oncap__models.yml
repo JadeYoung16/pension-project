@@ -188,7 +188,7 @@ models:
           - not_null:
               config:
                 severity: warn
-                
+
   - name: fct_transaction
     description: >
       Pension contribution fact. Grain: one contribution event
@@ -248,3 +248,59 @@ models:
         data_tests:
           - accepted_values:
               values: ['ok', 'rj']
+  
+  - name: fct_buyback
+    description: >
+      Buyback funnel accumulating snapshot. Grain: one buyback process per
+      member (member_id unique; assumes one buyback per member — business
+      allows multiple, future needs a buyback-instance id). Pivots bbk_*
+      life events into one row with milestone date columns. quote/app dates
+      aligned to logical order (least/greatest); members who applied without
+      a prior quote keep quote_date NULL. SK bound at quote_date (or app_date
+      fallback) via point-in-time join. Materialized as table (static data;
+      production accumulating snapshot would use incremental + merge).
+    columns:
+      - name: member_id
+        description: Grain key / PK. One buyback process per member.
+        data_tests:
+          - unique
+          - not_null
+
+      - name: member_sk
+        description: FK to dim_member (point-in-time on quote/app date).
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_member')
+                field: member_sk
+          - not_null
+
+      - name: employer_sk
+        description: FK to dim_employer (point-in-time).
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_employer')
+                field: employer_sk
+          - not_null
+
+      - name: outcome
+        description: Funnel terminal state.
+        data_tests:
+          - accepted_values:
+               arguments:  
+                  values: ['completed', 'approved_not_completed', 'applied_not_approved', 'cancelled', 'quoted_only']
+
+      - name: total_cost
+        description: Buyback total cost (CAD).
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                 min_value: 0
+
+      - name: buyback_service_years
+        description: Years of service being bought back.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0

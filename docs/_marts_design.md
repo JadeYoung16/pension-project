@@ -572,3 +572,28 @@ deliverables rather than design-time inputs. Deferred until then.
 - **Proper fix (Week 8+):** Switch snapshot to `timestamp` strategy keyed
   on a business-effective date column, OR backfill valid_from from source
   history. Deferred — no multi-version data exists to justify the rework.
+
+### fct_buyback (accumulating snapshot)
+- **Grain:** one buyback process per member. member_id is grain key
+  (current data: one buyback per member, verified n_quote=1 for all).
+  Business allows multiple buybacks per member; future needs a
+  buyback-instance id. Tech debt.
+- **Source:** stg_oncap__life_event, event_type ilike 'bbk%'
+  (excludes bbk_installment_pay payment detail).
+- **Pivot:** bbk_quote/app/approved/complete/cancelled events pivoted
+  into one row with milestone date columns.
+- **Date alignment:** generator emits app_date systematically before
+  quote_date. Business has two valid start paths (admin sends quote
+  first, OR member applies without a quote). Resolved with least/greatest
+  so quote<=app when both exist; 107 members with app but no quote keep
+  quote_date NULL ("applied without quote"). lag days_quote_to_app is
+  NULL for those (cannot compute). Flagged for upstream review.
+- **SK binding:** point-in-time join on coalesce(quote_date, app_date)
+  (earliest milestone). Lower bound relaxed (same SCD2 valid_from tech
+  debt as fct_transaction).
+- **Materialization:** table. Static historical data, full pivot fills
+  all milestones at once. Production accumulating snapshot would use
+  incremental + merge to update milestones as the process advances.
+- **Outcome distribution:** completed 660 / approved_not_completed 817
+  / applied_not_approved 274 / cancelled 44 = 1795. Total conversion
+  660/1795 = 36.8%. Biggest drop: approved-but-not-completed (817).
