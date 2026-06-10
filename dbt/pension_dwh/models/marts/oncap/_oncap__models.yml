@@ -179,8 +179,9 @@ models:
         description: CRA category code (leading zeros stripped), FK to sector seed.
         data_tests:
           - relationships:
-              to: ref('cra_sector_category')
-              field: sector_category_code
+              arguments:
+                to: ref('cra_sector_category')
+                field: sector_category_code
 
       - name: legal_name
         description: Charity legal name from ident; ~8 rows NULL (identity record absent).
@@ -207,8 +208,9 @@ models:
         description: FK to dim_member (point-in-time). Rare NULL = orphan txn.
         data_tests:
           - relationships:
-              to: ref('dim_member')
-              field: member_sk
+              arguments:
+                to: ref('dim_member')
+                field: member_sk
           - not_null:
               config:
                 severity: warn
@@ -217,8 +219,9 @@ models:
         description: FK to dim_employer (point-in-time).
         data_tests:
           - relationships:
-              to: ref('dim_employer')
-              field: employer_sk
+              arguments:
+                to: ref('dim_employer')
+                field: employer_sk
           - not_null:
               config:
                 severity: warn
@@ -227,27 +230,31 @@ models:
         description: FK to dim_date (pay_period_end as YYYYMMDD).
         data_tests:
           - relationships:
-              to: ref('dim_date')
-              field: date_sk
+              arguments:
+                to: ref('dim_date')
+                field: date_sk
           - not_null
 
       - name: member_contribution
         description: Member contribution amount (CAD). Additive.
         data_tests:
           - dbt_utils.accepted_range:
-              min_value: 0
+              arguments:
+                min_value: config0
 
       - name: employer_contribution
         description: Employer contribution amount (CAD). Additive.
         data_tests:
           - dbt_utils.accepted_range:
-              min_value: 0
+              arguments:
+               min_value: 0
 
       - name: transaction_status
         description: ok / rj. Degenerate dim; rj retained for analysis.
         data_tests:
           - accepted_values:
-              values: ['ok', 'rj']
+              arguments:
+                values: ['ok', 'rj']
   
   - name: fct_buyback
     description: >
@@ -304,3 +311,46 @@ models:
           - dbt_utils.accepted_range:
               arguments:
                 min_value: 0
+  - name: fct_email
+    description: >
+      Email engagement fact. Grain: one email engagement event
+      (sent/delivered/opened/clicked/bounced/unsubscribed). Event-count
+      fact — measure event_count is implicit (1 per row), aggregated at
+      query layer. Member-centric: no employer FK. SK bound at ETL time
+      via point-in-time join; lower bound relaxed pending snapshot
+      valid_from fix (see tech debt).
+    columns:
+      - name: event_id
+        description: Natural key / PK. Grain guard. Verified unique, no dedup needed.
+        data_tests:
+          - unique
+          - not_null
+
+      - name: member_sk
+        description: FK to dim_member (point-in-time). NULL = orphan event.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_member')
+                field: member_sk
+          - not_null:
+              config:
+                severity: warn
+
+      - name: event_date_sk
+        description: FK to dim_date (event_timestamp as YYYYMMDD).
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_sk
+          - not_null
+
+      - name: event_type
+        description: >
+          sent/delivered/opened/clicked/bounced/unsubscribed.
+          Degenerate dim; email funnel stages.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['sent', 'delivered', 'opened', 'clicked', 'bounced', 'unsubscribed']
