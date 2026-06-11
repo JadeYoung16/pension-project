@@ -22,7 +22,11 @@ pension_dwh:
       # --- Connection ---
       account:   "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
       user:      "{{ env_var('SNOWFLAKE_USER') }}"
-      password:  "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+      # --- Auth: RSA key-pair (account enforces MFA; password auth no longer works) ---
+      # Private key path is the IN-CONTAINER path (project mounted at /app).
+      # Key file lives in .secrets/ which is gitignored — only this path string
+      # is committed, never the key itself.
+      private_key_path: "/app/.secrets/snowflake_key.p8"
       role:      "{{ env_var('SNOWFLAKE_ROLE') }}"
 
       # --- Compute & storage ---
