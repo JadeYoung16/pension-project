@@ -354,3 +354,66 @@ models:
           - accepted_values:
               arguments:
                 values: ['sent', 'delivered', 'opened', 'clicked', 'bounced', 'unsubscribed']
+
+  - name: fct_portal
+    description: >
+      Portal activity fact. Grain: one portal event
+      (login/logout, statement_view, document_download,
+      pension_calculator_use, buyback_info_page_view,
+      buyback_quote_request, beneficiary_page_view). Factless —
+      no additive measure, event counts via count(*) at query layer.
+      Member-centric: no employer FK. SK bound at ETL time via
+      point-in-time join; lower bound relaxed pending snapshot
+      valid_from fix (see tech debt). VARIANT event_properties dropped
+      (vestigial — empty for all event types except login's auth_method,
+      which has no analytical value). referrer / ip_hash dropped
+      (all-NULL / non-analytical). device_type derived from user_agent.
+    columns:
+      - name: event_id
+        description: Natural key / PK. Grain guard. Verified unique, no dedup needed.
+        data_tests:
+          - unique
+          - not_null
+
+      - name: member_sk
+        description: FK to dim_member (point-in-time). NULL = orphan event.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_member')
+                field: member_sk
+          - not_null:
+              config:
+                severity: warn
+
+      - name: event_date_sk
+        description: FK to dim_date (event_timestamp as YYYYMMDD).
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_sk
+          - not_null
+
+      - name: event_type
+        description: >
+          8 portal event types. Degenerate dim. page_path maps near-1:1
+          to event_type (kept as raw DD, prefer event_type for analysis).
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['portal_login', 'portal_logout', 'statement_view', 'document_download', 'pension_calculator_use', 'buyback_info_page_view', 'buyback_quote_request', 'beneficiary_page_view']
+
+      - name: session_id
+        description: >
+          Portal session identifier. Degenerate dim (no dim_session).
+          Supports session-level behavioral analysis. Verified always populated.
+        data_tests:
+          - not_null
+
+      - name: device_type
+        description: >
+          Derived DD from user_agent (Mobile-iOS / Mobile-Android / Desktop).
+          accepted_values acts as a contract sentinel on the case-when
+          transformation
