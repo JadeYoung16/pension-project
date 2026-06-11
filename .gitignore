@@ -68,3 +68,7 @@ dbt/.user.yml
 dbt/pension_dwh/target/
 dbt/pension_dwh/dbt_packages/
 dbt/pension_dwh/logs/
+
+# secrets (Snowflake key-pair private key — NEVER commit)
+.secrets/
+
