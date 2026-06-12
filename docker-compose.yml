@@ -73,6 +73,37 @@ services:
     # to drop into it whenever we want to run scripts.
     command: tail -f /dev/null
 
+  # ============================================================
+  # Airflow (orchestration) 
+  # ============================================================
+  airflow:
+    build:
+      context: .
+      dockerfile: airflow/Dockerfile
+    container_name: pension-airflow
+    restart: unless-stopped
+
+    # A-1: run as root so the container can read the host Docker socket on
+    # Docker Desktop for Mac (no Linux gid matching needed).
+    user: root
+
+    # NOTE: deliberately NO env_file here. Airflow holds no Snowflake/PG creds —
+    # those live in pension-app. Airflow just shells in. (Least privilege.)
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"   # don't clutter the UI with demos
+
+    depends_on:
+      - app                                   # app (and its postgres) up first
+
+    ports:
+      - "8080:8080"                           # Airflow UI → http://localhost:8080
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock   # A-1: borrow host daemon
+      - ./airflow/dags:/opt/airflow/dags            # our DAG .py files (Step B)
+      - airflow_data:/opt/airflow                   # persist metadata DB + logs
+
+    command: airflow standalone
 
 # ============================================================
 # Named volumes (managed by Docker, persist across container rebuilds)
@@ -80,3 +111,5 @@ services:
 volumes:
   postgres_data:
     name: pension_postgres_data
+  airflow_data:                
+    name: pension_airflow_data
