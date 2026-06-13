@@ -240,7 +240,7 @@ models:
         data_tests:
           - dbt_utils.accepted_range:
               arguments:
-                min_value: config0
+                min_value: 0
 
       - name: employer_contribution
         description: Employer contribution amount (CAD). Additive.
@@ -314,9 +314,7 @@ models:
   - name: fct_email
     description: >
       Email engagement fact. Grain: one email engagement event
-      (sent/delivered/opened/clicked/bounced/unsubscribed). Event-count
-      fact — measure event_count is implicit (1 per row), aggregated at
-      query layer. Member-centric: no employer FK. SK bound at ETL time
+      (sent/delivered/opened/clicked/bounced/unsubscribed).  Member-centric: no employer FK. SK bound at ETL time
       via point-in-time join; lower bound relaxed pending snapshot
       valid_from fix (see tech debt).
     columns:
