@@ -47,8 +47,7 @@ def split_statements(sql_text: str) -> list[str]:
 
 
 def target_of(stmt: str) -> str:
-    """Extract the target table name from a COPY INTO statement (for logging / --table filter)."""
-    m = re.search(r"COPY\s+INTO\s+([A-Za-z0-9_.\"]+)", stmt, re.IGNORECASE)
+    m = re.search(r"(?:COPY\s+INTO|TRUNCATE\s+TABLE)\s+([A-Za-z0-9_.\"]+)", stmt, re.IGNORECASE)
     return m.group(1).split(".")[-1].strip('"') if m else "(use/other)"
 
 
@@ -63,6 +62,8 @@ def main():
     # Separate session-setup (USE ...) from COPY statements
     use_stmts = [s for s in statements if s.upper().startswith("USE")]
     copy_stmts = [s for s in statements if s.upper().startswith("COPY")]
+    trunc_stmts = [s for s in statements if s.upper().startswith("TRUNCATE")]
+    trunc_by_table = {target_of(s): s for s in trunc_stmts}
 
     if args.table:
         copy_stmts = [s for s in copy_stmts if target_of(s) == args.table]
@@ -80,6 +81,8 @@ def main():
         total_loaded = 0
         for stmt in copy_stmts:
             tbl = target_of(stmt)
+            if tbl in trunc_by_table:
+                cur.execute(trunc_by_table[tbl])   # TRUNCATE before COPY → 确定性重载
             cur.execute(stmt)
             rows = cur.fetchall()
 

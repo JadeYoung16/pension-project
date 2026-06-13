@@ -21,6 +21,17 @@ USE WAREHOUSE PENSION_WH;
 USE DATABASE PENSION_DEV;
 USE SCHEMA RAW_ONCAP;
 
+TRUNCATE TABLE employer_registry;        
+TRUNCATE TABLE life_event;
+TRUNCATE TABLE member_census;
+TRUNCATE TABLE portal_event;
+TRUNCATE TABLE transaction;
+TRUNCATE TABLE email_engagement;
+TRUNCATE TABLE seminar_attendance;
+TRUNCATE TABLE call_log;
+TRUNCATE TABLE RAW_EXTERNAL.t3010_ident;
+TRUNCATE TABLE RAW_EXTERNAL.t3010_schedule3;
+
 
 COPY INTO employer_registry (
     employer_id, business_number, legal_name, operating_name,
