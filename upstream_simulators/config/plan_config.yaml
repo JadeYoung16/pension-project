@@ -25,6 +25,7 @@ seeds:
   call: 48
   seminar: 49
   email: 50
+  salary: 51
 
 contributions:
   member_rate: 0.03
@@ -197,6 +198,22 @@ buyback:
     rejected: 0.05
     cancelled: 0.03
     abandoned: 0.07
+
+salary_history:
+  # 每年 review cycle 命中调薪的概率(掷一次/年/member)
+  annual_review_raise_prob: 0.70
+  # 普通 COLA 调薪幅度(占 promotion 之外的多数)
+  cola_raise_pct_range: [0.02, 0.04]
+  # promotion 大跳:占调薪事件的比例 + 幅度
+  promotion_share: 0.10
+  promotion_raise_pct_range: [0.08, 0.15]
+  # 锚定漂移:最新一条 salary 相对 census ANNUAL_SALARY 的允许浮动
+  anchor_drift_pct: 0.01
+  # review 生效月(对齐 dim_date 的 Canadian fiscal year Apr–Mar)
+  review_effective_month: 4
+  review_effective_day: 1
+  # 历史回溯上限(年),控体量
+  max_lookback_years: 5
 
 engagement:
   portal_login_per_year: 3.5

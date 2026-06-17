@@ -11,6 +11,7 @@ Runs all upstream simulators in dependency order:
   Stage 3d: Call Logs                     (depends on Stage 2)
   Stage 3e: Seminar Attendance            (depends on Stage 2)
   Stage 3f: Email Engagement              (depends on Stage 2)
+  Stage 3g: Salary History (portal feed)  (depends on Stage 2)
 
 Usage:
     python -m upstream_simulators.run_all
@@ -33,6 +34,7 @@ from upstream_simulators.generators import portal_event_generator
 from upstream_simulators.generators import call_log_generator
 from upstream_simulators.generators import seminar_generator
 from upstream_simulators.generators import email_engagement_generator
+from upstream_simulators.generators import salary_history_generator   
 
 
 STAGES = [
@@ -44,6 +46,7 @@ STAGES = [
     ("3d", "Call Logs", call_log_generator),
     ("3e", "Seminar Attendance", seminar_generator),
     ("3f", "Email Engagement", email_engagement_generator),
+    ("3g", "Salary History (portal feed)", salary_history_generator),
 ]
 
 

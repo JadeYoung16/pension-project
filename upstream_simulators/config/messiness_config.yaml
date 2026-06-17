@@ -21,6 +21,14 @@ member_census:
   non_ascii_name: 0.01
   dob_format_drift: 0.01              # Non-standard date format
 
+salary_history:
+  missing_annual_salary: 0.02      # portal 必填偶漏
+  negative_salary: 0.003           # 冲正/退补录成负数
+  outlier_10x: 0.001               # fat-finger 多打个零
+  duplicate_record: 0.005          # 重复提交(同 m+e+effective)
+  backdated_report: 0.04           # reported_at 晚于 effective 1–6 月
+  orphan_member: 0.002             # 报了 census 里不存在的 member  
+
 transactions:
   rejected_status: 0.005
   missing_pay_period_start: 0.02
