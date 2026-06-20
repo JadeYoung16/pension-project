@@ -34,6 +34,7 @@ UPLOAD_PLAN = [
     ("t3010_schedule3",    "data/raw_external/cra_t3010_2023",       "schedule_3_compensation_2023.csv"),
      # member_census: preprocessed .DAT → CSV via preprocess_member_census.py
     ("member_census",      "data/staging/member_census",             "*.csv"),
+    ("salary_history",     "data/synthetic/salary_history",          "*.csv"),
 ]
 
 

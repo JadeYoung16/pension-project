@@ -29,6 +29,7 @@ TRUNCATE TABLE transaction;
 TRUNCATE TABLE email_engagement;
 TRUNCATE TABLE seminar_attendance;
 TRUNCATE TABLE call_log;
+TRUNCATE TABLE salary_history;
 TRUNCATE TABLE RAW_EXTERNAL.t3010_ident;
 TRUNCATE TABLE RAW_EXTERNAL.t3010_schedule3;
 
@@ -216,4 +217,18 @@ FROM (
     FROM @PENSION_DEV.RAW_ONCAP.LOAD_STAGE/t3010_schedule3/
 )
 FILE_FORMAT = (FORMAT_NAME = PENSION_DEV.RAW_ONCAP.CSV_FORMAT)
+ON_ERROR = CONTINUE;
+
+COPY INTO salary_history (
+    member_id, employer_id, effective_date, annual_salary,
+    change_reason, reported_at,
+    _source_file, _row_num
+)
+FROM (
+    SELECT
+        $1, $2, $3, $4, $5, $6,
+        METADATA$FILENAME, METADATA$FILE_ROW_NUMBER
+    FROM @LOAD_STAGE/salary_history/
+)
+FILE_FORMAT = (FORMAT_NAME = CSV_FORMAT)
 ON_ERROR = CONTINUE;
