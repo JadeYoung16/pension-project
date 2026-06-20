@@ -62,6 +62,15 @@ sources:
           Note: 1,069 rows excluded due to malformed JSON; TRY_PARSE_JSON
           recovery is a Week 9 polish item.
 
+      - name: salary_history
+        description: >
+          Employer-portal salary feed: effective-dated annual salary history
+          (142,194 rows). Full-snapshot source — raw is truncate+reload;
+          SCD2 change history derived downstream via snapshot. Contains
+          intentional dirty data (missing/negative/outlier/duplicate/
+          backdated/orphan) for data-quality testing. No freshness configured
+          (one-time portfolio load, not a recurring feed).
+          
       # --- control / audit tables (4, currently 0-row but declared for completeness)
       - name: member_census_control
         description: >
