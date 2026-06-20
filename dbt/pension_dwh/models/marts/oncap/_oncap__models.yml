@@ -80,6 +80,64 @@ models:
         data_tests:
           - not_null
 
+  - name: dim_salary_history
+    description: >
+      SCD2 salary dimension built by window-function ranging (not dbt
+      snapshot). One row per (member_id, employer_id, effective_date) — one
+      salary version per membership per change. valid_from = real business
+      effective_date (avoids the snapshot check-strategy run-timestamp tech
+      debt); valid_to = lead(effective_date); full idempotent recompute.
+      Orphans excluded via composite semi-join to member_census; negative
+      (payroll reversal) and NULL (missing report) salaries are kept by
+      design and monitored via warn-level tests, not blocked.
+
+    columns:
+      - name: salary_sk
+        description: "Surrogate key = md5(member_id, employer_id, effective_date). Grain identity; fact-join key."
+        data_tests:
+          - unique
+          - not_null
+
+      - name: member_id
+        description: "Natural key part 1 (employer-scoped, not globally unique)."
+        data_tests:
+          - not_null
+
+      - name: employer_id
+        description: "Natural key part 2."
+        data_tests:
+          - not_null
+
+      - name: effective_date
+        description: "Immutable business event date this salary takes effect. Equals valid_from numerically; kept separate as the reported business fact vs the derived SCD2 interval start."
+        data_tests:
+          - not_null
+
+      - name: valid_from
+        description: "SCD2 interval start (= effective_date)."
+        data_tests:
+          - not_null
+
+      - name: reported_at
+        description: "Portal report timestamp. Later than effective_date for retroactive/backdated changes (~4%)."
+        data_tests:
+          - not_null
+
+      - name: change_reason
+        description: "Salary change driver (lowercased in staging)."
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['initial', 'cola', 'promotion', 'correction']
+
+      # annual_salary: intentionally NO not_null test — NULL (missing report)
+      #   and negative (payroll reversal) are legitimate; monitored via the
+      #   warn-level singular test warn_salary_value_anomalies.sql instead.
+      # valid_to: intentionally NO not_null test — current version is NULL by
+      #   design (is_current = valid_to is null).
+
+
   - name: dim_employer
     description: "SCD Type 2 employer dimension. One row per employer per validity window."
 
