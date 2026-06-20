@@ -351,6 +351,27 @@ CREATE INDEX idx_rejected_rejected_at  ON raw_oncap._rejected (rejected_at);
 
 
 -- -----------------------------------------------------------------------------
+-- Table 11: salary_history  ←  ONCAP001_SALARY_HISTORY_YYYYMMDD.csv
+-- -----------------------------------------------------------------------------
+-- CSV format. Employer-portal salary feed (effective-dated history).
+-- Money column uses NUMERIC(12, 2), matching annual_salary in member_census.
+-- reported_at has no TZ in source → TIMESTAMP (not TIMESTAMPTZ).
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS raw_oncap.salary_history (
+    member_id                        TEXT,
+    employer_id                      TEXT,
+    effective_date                   DATE,
+    annual_salary                    NUMERIC(12, 2),
+    change_reason                    TEXT,
+    reported_at                      TIMESTAMP,
+    -- audit columns
+    _source_file                     TEXT        NOT NULL,
+    _row_num                         BIGINT      NOT NULL,
+    _loaded_at                       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+
+-- -----------------------------------------------------------------------------
 -- Meta-table: _load_audit  (Week 4 Day 3)
 -- -----------------------------------------------------------------------------
 -- One row per load_to_table() invocation. Captures success/failure, row

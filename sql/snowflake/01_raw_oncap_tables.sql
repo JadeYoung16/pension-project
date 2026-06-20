@@ -249,6 +249,22 @@ CREATE TABLE IF NOT EXISTS email_engagement (
 );
 
 -- -----------------------------------------------------------------------------
+-- Table 11: salary_history  (CSV, employer-portal salary feed)
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS salary_history (
+    member_id                        STRING,
+    employer_id                      STRING,
+    effective_date                   DATE,
+    annual_salary                    NUMBER(12, 2),
+    change_reason                    STRING,
+    reported_at                      TIMESTAMP_NTZ,   -- no TZ in source
+    _source_file                     STRING       NOT NULL,
+    _row_num                         BIGINT       NOT NULL,
+    _loaded_at                       TIMESTAMP_TZ NOT NULL DEFAULT CURRENT_TIMESTAMP()
+);
+
+
+-- -----------------------------------------------------------------------------
 -- Meta: _rejected
 -- -----------------------------------------------------------------------------
 -- Quarantine for malformed rows. In Snowflake the equivalent path is
