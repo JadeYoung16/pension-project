@@ -79,9 +79,7 @@ ranged as (
         annual_salary,
         change_reason,
         reported_at,
-
         effective_date as valid_from,
-
         lead(effective_date) over (
             partition by member_id, employer_id
             order by effective_date
@@ -107,10 +105,10 @@ final as (
         -- change reason (already lower() in staging)
         change_reason,
 
-         -- business effective date (immutable source fact; equals valid_from
+        -- business effective date (immutable source fact; equals valid_from
         -- numerically but kept separate: effective_date is the reported
         -- business event, valid_from is the derived SCD2 interval start)
-        valid_from as effective_date,  
+        valid_from as effective_date,
 
         -- SCD2 validity window  [valid_from, valid_to)  left-closed right-open
         valid_from,
