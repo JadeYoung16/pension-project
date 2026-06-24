@@ -1,13 +1,16 @@
 [sqlfluff]
 dialect = snowflake
-templater = jinja
+templater = dbt
 max_line_length = 120
 
 # Rules we explicitly disable:
 #   LT01 — "as" spacing (we use multi-space column alignment intentionally)
 #   ST06 — SELECT column ordering (overly prescriptive)
 #   LT05 — line length (covered by max_line_length above)
-exclude_rules = LT01, ST06, LT05
+#   AL01 — explicit table aliasing (from x as y) is an intentional project convention
+#   RF02 — false positives on incremental {{ this }} self-reference subqueries
+#          (single-table, no real ambiguity; sqlfluff miscounts FROM context)
+exclude_rules = LT01, ST06, LT05, AL01, RF02
 
 [sqlfluff:indentation]
 indent_unit = space

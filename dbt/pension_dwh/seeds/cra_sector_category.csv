@@ -1,0 +1,31 @@
+sector_category_code,sector_category_label
+1,Organizations Relieving Poverty
+2,Foundations Relieving Poverty
+10,Teaching Institutions
+11,Support of Schools and Education
+12,Education in the Arts
+13,Educational Organizations Not Elsewhere Categorized
+14,Research
+15,Foundations Advancing Education
+30,Christianity
+40,Islam
+50,Judaism
+60,Other Religions
+70,Support of Religion
+80,Ecumenical and Inter-faith Organizations
+90,Foundations Advancing Religions
+100,Core Health Care
+110,Supportive Health Care
+120,Protective Health Care
+130,Health Care Products
+140,Complementary or Alternative Health Care
+150,Relief of the Aged
+155,Upholding Human Rights
+160,Community Resource
+170,Environment
+175,Agriculture
+180,Animal Welfare
+190,Arts
+200,Public Amenities
+210,Foundations
+215,NASO

@@ -1,6 +1,6 @@
 with date_spine as (
 
-    {{ dbt_utils.date_spine(
+    {{ dbt_utils.date_spine(  
         datepart="day",
         start_date="'2015-01-01'",
         end_date="'2036-01-01'"

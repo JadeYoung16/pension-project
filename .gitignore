@@ -72,3 +72,8 @@ dbt/pension_dwh/logs/
 # secrets (Snowflake key-pair private key — NEVER commit)
 .secrets/
 
+cat >> .gitignore << 'EOF'
+
+# Seeds are source code, not data — must be tracked despite the *.csv rule above
+!dbt/pension_dwh/seeds/*.csv
+EOF

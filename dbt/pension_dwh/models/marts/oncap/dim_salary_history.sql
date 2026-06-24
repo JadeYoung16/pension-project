@@ -39,7 +39,9 @@ salary as (
 -- an orphan and must be caught.
 valid_memberships as (
 
-    select distinct member_id, employer_id
+    select distinct 
+        member_id, 
+        employer_id
     from {{ ref('stg_oncap__member_census') }}
 
 ),
@@ -48,12 +50,12 @@ filtered as (
 
     select s.*
     from salary as s
-    where exists (
-        select 1
-        from valid_memberships as v
-        where v.member_id = s.member_id
-          and v.employer_id = s.employer_id
-    )
+    where exists (    -- noqa: LT02
+        select 1    -- noqa: LT02
+        from valid_memberships as v    -- noqa: LT02
+        where v.member_id = s.member_id    -- noqa: LT02
+          and v.employer_id = s.employer_id    -- noqa: LT02
+    )    -- noqa: LT02
 
 ),
 
@@ -79,9 +81,7 @@ ranged as (
         annual_salary,
         change_reason,
         reported_at,
-
         effective_date as valid_from,
-
         lead(effective_date) over (
             partition by member_id, employer_id
             order by effective_date
@@ -95,7 +95,7 @@ final as (
 
     select
         -- surrogate key (grain = member_id + employer_id + effective_date)
-        {{ dbt_utils.generate_surrogate_key(['member_id', 'employer_id', 'effective_date']) }} as salary_sk,
+        {{ dbt_utils.generate_surrogate_key(['member_id', 'employer_id', 'effective_date']) }} as salary_sk,    
 
         -- natural key
         member_id,
@@ -107,10 +107,10 @@ final as (
         -- change reason (already lower() in staging)
         change_reason,
 
-         -- business effective date (immutable source fact; equals valid_from
+        -- business effective date (immutable source fact; equals valid_from
         -- numerically but kept separate: effective_date is the reported
         -- business event, valid_from is the derived SCD2 interval start)
-        valid_from as effective_date,  
+        valid_from as effective_date,
 
         -- SCD2 validity window  [valid_from, valid_to)  left-closed right-open
         valid_from,

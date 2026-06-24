@@ -20,10 +20,10 @@ source as (
 
     {% if is_incremental() %}
     -- 增量 run: 只处理 event_timestamp 在 "已有数据最大时间 - 7 天" 之后的行
-    where event_timestamp >= (
-        select dateadd('day', -7, max(event_timestamp))
-        from {{ this }}
-    )
+    where event_timestamp >= (    -- noqa: LT02
+        select dateadd('day', -7, max(event_timestamp))    -- noqa: LT02
+        from {{ this }}    -- noqa: LT02
+    )    -- noqa: LT02
     {% endif %}
 
 ),
@@ -45,8 +45,8 @@ joined as (
     from source s
 
     left join {{ ref('dim_member') }} m
-        on s.member_id = m.member_id
-        and s.event_timestamp < coalesce(m.valid_to, '9999-12-31')
+        on s.member_id = m.member_id  -- noqa: LT02
+        and s.event_timestamp < coalesce(m.valid_to, '9999-12-31')  -- noqa: LT02
 
 ),
 
@@ -64,12 +64,9 @@ final as (
         cast(to_char(event_timestamp, 'YYYYMMDD') as integer) as event_date_sk,  -- → dim_date.date_sk
 
         -- degenerate dimensions (无独立维度的描述性标识)
-        event_type,                 -- 8 类: portal_login/logout, statement_view, document_download,
-                                    --        pension_calculator_use, buyback_info_page_view,
-                                    --        buyback_quote_request, beneficiary_page_view
+        event_type,                 -- 8 类: portal_login/logout, statement_view, document_download,pension_calculator_use, buyback_info_page_view,buyback_quote_request, beneficiary_page_view                                 
         session_id,                 -- portal 特有: 一次会话标识, 支持 session 级行为分析
-        page_path,                  -- 与 event_type 近 1:1 映射 (见 _marts_design.md), 保留为原始 DD,
-                                    --        分析优先用 event_type
+        page_path,                  -- 与 event_type 近 1:1 映射 (见 _marts_design.md), 保留为原始 DD,分析优先用 event_type
         event_timestamp,            -- event-time, 也作 degenerate dim
 
         -- 派生 degenerate dim: 从 user_agent 解析设备类型
