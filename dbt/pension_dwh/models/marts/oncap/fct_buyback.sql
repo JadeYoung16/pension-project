@@ -20,8 +20,8 @@ buyback_events as (
         is_open_option,
         total_cost
     from {{ ref('stg_oncap__life_event') }}
-    where event_type_code ilike 'bbk%'
-      and event_type_code != 'bbk_installment_pay'   -- 付款明细不是里程碑
+    where event_type_code ilike 'bbk%'  -- noqa: LT02
+      and event_type_code != 'bbk_installment_pay'   -- 付款明细不是里程碑  -- noqa: LT02
 
 ),
 
@@ -126,11 +126,11 @@ final as (
 
     left join {{ ref('dim_member') }} m
         on p.member_id = m.member_id    -- noqa: LT02
-        and coalesce(p.quote_date, p.app_date) < coalesce(m.valid_to, '9999-12-31')
+        and coalesce(p.quote_date, p.app_date) < coalesce(m.valid_to, '9999-12-31') -- noqa: LT02
 
     left join {{ ref('dim_employer') }} e
         on p.employer_id = e.employer_id    -- noqa: LT02
-        and coalesce(p.quote_date, p.app_date) < coalesce(e.valid_to, '9999-12-31')
+        and coalesce(p.quote_date, p.app_date) < coalesce(e.valid_to, '9999-12-31')  -- noqa: LT02
 
 )
 

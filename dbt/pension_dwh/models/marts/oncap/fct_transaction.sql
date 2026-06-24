@@ -43,7 +43,7 @@ deduped as (
                 order by source_row_num
             ) as rn
         from source
-    ) 
+    ) as numbered
     where rn = 1
 
 ),
@@ -61,11 +61,11 @@ joined as (
     from deduped d
 
     left join {{ ref('dim_member') }} m
-        on d.member_id = m.member_id
+        on d.member_id = m.member_id  -- noqa: LT02
         and d.pay_period_end < coalesce(m.valid_to, '9999-12-31')
 
     left join {{ ref('dim_employer') }} e
-        on d.employer_id = e.employer_id
+        on d.employer_id = e.employer_id  -- noqa: LT02
         and d.pay_period_end < coalesce(e.valid_to, '9999-12-31')
 ),
 
