@@ -50,10 +50,6 @@ deduped as (
 
 -- ============================================================
 -- joined: point-in-time join 两个 SCD2 维度
--- ⚠️ 技术债: snapshot 用 check 策略, 首次运行时 valid_from = 系统时间(2026),
---    早于所有交易日期(2023-24)。当前所有维度均为单版本(valid_to 全 NULL),
---    故放宽下界, 仅用 valid_to 判定 —— 单版本下等价于连接当前版本, 结果正确。
---    多版本出现时, 须恢复 `pay_period_end >= valid_from` 下界 (见 _marts_design.md 技术债条目)。
 -- ============================================================
 joined as (
 
@@ -65,13 +61,12 @@ joined as (
     from deduped d
 
     left join {{ ref('dim_member') }} m
-        on p.member_id = m.member_id    -- noqa: LT02
-        and coalesce(p.quote_date, p.app_date) < coalesce(m.valid_to, '9999-12-31')
+        on d.member_id = m.member_id
+        and d.pay_period_end < coalesce(m.valid_to, '9999-12-31')
 
     left join {{ ref('dim_employer') }} e
-        on p.employer_id = e.employer_id    -- noqa: LT02
-        and coalesce(p.quote_date, p.app_date) < coalesce(m.valid_to, '9999-12-31')
-
+        on d.employer_id = e.employer_id
+        and d.pay_period_end < coalesce(e.valid_to, '9999-12-31')
 ),
 
 -- ============================================================

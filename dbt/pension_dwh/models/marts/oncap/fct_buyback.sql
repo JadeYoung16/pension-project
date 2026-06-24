@@ -130,7 +130,7 @@ final as (
 
     left join {{ ref('dim_employer') }} e
         on p.employer_id = e.employer_id    -- noqa: LT02
-        and coalesce(p.quote_date, p.app_date) < coalesce(m.valid_to, '9999-12-31')
+        and coalesce(p.quote_date, p.app_date) < coalesce(e.valid_to, '9999-12-31')
 
 )
 
