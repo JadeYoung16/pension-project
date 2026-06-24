@@ -1,6 +1,6 @@
 [sqlfluff]
 dialect = snowflake
-templater = jinja
+templater = dbt
 max_line_length = 120
 
 # Rules we explicitly disable:

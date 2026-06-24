@@ -39,7 +39,9 @@ salary as (
 -- an orphan and must be caught.
 valid_memberships as (
 
-    select distinct member_id, employer_id
+    select distinct 
+        member_id, 
+        employer_id
     from {{ ref('stg_oncap__member_census') }}
 
 ),
@@ -50,7 +52,7 @@ filtered as (
     from salary as s
     where exists (
         select 1
-        from valid_memberships as v
+        from valid_memberships as v  
         where v.member_id = s.member_id
           and v.employer_id = s.employer_id
     )
@@ -93,7 +95,7 @@ final as (
 
     select
         -- surrogate key (grain = member_id + employer_id + effective_date)
-        {{ dbt_utils.generate_surrogate_key(['member_id', 'employer_id', 'effective_date']) }} as salary_sk,
+        {{ dbt_utils.generate_surrogate_key(['member_id', 'employer_id', 'effective_date']) }} as salary_sk,    
 
         -- natural key
         member_id,
