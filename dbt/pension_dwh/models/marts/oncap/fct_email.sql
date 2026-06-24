@@ -45,7 +45,7 @@ joined as (
     from source s
 
     left join {{ ref('dim_member') }} m
-        on s.member_id = m.member_id  
+        on s.member_id = m.member_id  -- noqa: LT02
         and s.event_timestamp < coalesce(m.valid_to, '9999-12-31')  -- noqa: LT02
 
 ),
