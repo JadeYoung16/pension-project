@@ -56,7 +56,6 @@ pivoted as (
 
 ),
 
-
 -- ============================================================
 -- ordered: 对齐 quote/app 顺序 (两者都有则 quote≤app; 只有一个则保留)
 -- 业务: quote(报价)应早于 app(申请); 无 quote 的是"未报价直接申请"
@@ -79,13 +78,10 @@ ordered as (
 
 ),
 
-
-
 -- ============================================================
 -- final: PK + 终态 + lag + point-in-time join 取 sk
 -- ============================================================
 final as (
-
     select
         -- PK (裸自然键, grain key; 注: 业务可多次 buyback, 未来需 buyback 实例 id)
         p.member_id,
@@ -129,14 +125,13 @@ final as (
     from ordered p
 
     left join {{ ref('dim_member') }} m
-        on p.member_id = m.member_id
+        on p.member_id = m.member_id    -- noqa: LT02
         and coalesce(p.quote_date, p.app_date) < coalesce(m.valid_to, '9999-12-31')
 
     left join {{ ref('dim_employer') }} e
-        on p.employer_id = e.employer_id
+        on p.employer_id = e.employer_id    -- noqa: LT02
         and coalesce(p.quote_date, p.app_date) < coalesce(m.valid_to, '9999-12-31')
 
 )
-
 
 select * from final

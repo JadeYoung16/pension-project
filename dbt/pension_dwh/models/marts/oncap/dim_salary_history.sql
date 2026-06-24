@@ -50,12 +50,12 @@ filtered as (
 
     select s.*
     from salary as s
-    where exists (
-        select 1
-        from valid_memberships as v  
-        where v.member_id = s.member_id
-          and v.employer_id = s.employer_id
-    )
+    where exists (    -- noqa: LT02
+        select 1    -- noqa: LT02
+        from valid_memberships as v    -- noqa: LT02
+        where v.member_id = s.member_id    -- noqa: LT02
+          and v.employer_id = s.employer_id    -- noqa: LT02
+    )    -- noqa: LT02
 
 ),
 

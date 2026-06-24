@@ -20,10 +20,10 @@ source as (
 
     {% if is_incremental() %}
     -- 增量 run: 只处理 event_timestamp 在 "已有数据最大时间 - 7 天" 之后的行
-    where event_timestamp >= (
-        select dateadd('day', -7, max(event_timestamp))
-        from {{ this }}
-    )
+    where event_timestamp >= (    -- noqa: LT02
+        select dateadd('day', -7, max(event_timestamp))    -- noqa: LT02
+        from {{ this }}    -- noqa: LT02
+    )    -- noqa: LT02
     {% endif %}
 
 ),

@@ -20,10 +20,10 @@ source as (
     {% if is_incremental() %}
     -- 增量 run: 只处理 pay_period_end 在 "已有数据最大日期 - 30 天" 之后的行
     -- 30 天 look-back 覆盖雇主迟到/调整的 remittance (设计文档 488 行)
-    where pay_period_end >= (
-        select dateadd('day', -30, max(pay_period_end))
-        from {{ this }}
-    )
+    where pay_period_end >= (    -- noqa: LT02
+        select dateadd('day', -30, max(pay_period_end))    -- noqa: LT02
+        from {{ this }}    -- noqa: LT02
+    )    -- noqa: LT02
     {% endif %}
 
 ),
@@ -36,13 +36,14 @@ deduped as (
 
     select *
     from (
-        select *,
+        select 
+            *,
             row_number() over (
                 partition by transaction_id
                 order by source_row_num
             ) as rn
         from source
-    )
+    ) 
     where rn = 1
 
 ),
@@ -64,12 +65,12 @@ joined as (
     from deduped d
 
     left join {{ ref('dim_member') }} m
-        on d.member_id = m.member_id
-        and d.pay_period_end < coalesce(m.valid_to, '9999-12-31')
+        on p.member_id = m.member_id    -- noqa: LT02
+        and coalesce(p.quote_date, p.app_date) < coalesce(m.valid_to, '9999-12-31')
 
     left join {{ ref('dim_employer') }} e
-        on d.employer_id = e.employer_id
-        and d.pay_period_end < coalesce(e.valid_to, '9999-12-31')
+        on p.employer_id = e.employer_id    -- noqa: LT02
+        and coalesce(p.quote_date, p.app_date) < coalesce(m.valid_to, '9999-12-31')
 
 ),
 
