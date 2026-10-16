@@ -16,7 +16,7 @@ Business rules (from docs/01_plan_design_specification.md):
   - Age distribution varies by status (active 22-65, retired 55-95, etc.)
   - Salary: Active/Deferred only; by salary band (Entry/Mid/Senior/Executive)
   - Credited service ≤ plan age (10 years)
-  - Buyback eligibility: 30% of Active, 15% of Deferred
+  - Buyback eligibility: 30% of Active only (Deferred cannot purchase service)
 
 Messiness injection (from messiness_config.yaml):
   - 15% email missing (35% for members 60+)
@@ -256,9 +256,11 @@ def make_email(first_name: str, last_name: str, employer_op_name: str) -> str:
     """Synthesize a member email in a generic format."""
     first_clean = "".join(c for c in first_name.lower() if c.isalpha())[:15]
     last_clean = "".join(c for c in last_name.lower() if c.isalpha())[:20]
-    # Simple generic domain pool
     domains = ["gmail.com", "hotmail.com", "yahoo.ca", "outlook.com"]
-    return f"{first_clean}.{last_clean}@{random.choice(domains)}"  # nosec
+    # Deterministic domain from the name (was the unseeded global random module,
+    # so every run produced different domains). Does not consume the member RNG.
+    idx = int(hashlib.md5(f"{first_clean}.{last_clean}".encode()).hexdigest(), 16) % len(domains)
+    return f"{first_clean}.{last_clean}@{domains[idx]}"
 
 
 def make_phone(rng: random.Random) -> str:
@@ -425,6 +427,12 @@ def build_member_record(
         last_buyback_leave_end_date = random_date_between(
             min_leave_end, max_leave_end, rng,
         )
+    # Business rule: only Active members can purchase service (open option is
+    # active-only). Deferred members still draw the rolls above so the RNG
+    # stream -- and every other member's attributes -- stay identical to prior runs.
+    if status != "A":
+        eligible_buyback_service = None
+        last_buyback_leave_end_date = None
 
     # --- Normal retirement date = DOB + 65 years ---
     normal_retirement_date = add_years(dob, 65)
@@ -544,6 +552,13 @@ def generate_snapshot(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     logger.info("Writing to: %s", output_path)
 
+    # Separate RNG for eligibility defects so injecting them never shifts the
+    # member RNG stream.
+    dirt_rng = random.Random(
+        config["seeds"]["campaign_dirt"] + (snapshot_date - date(2024, 1, 1)).days
+    )
+    mc = messiness["member_census"]
+
     with FixedWidthWriter(output_path, layout) as w:
         # --- Header ---
         w.write_header({
@@ -566,6 +581,14 @@ def generate_snapshot(
                 rng=rng,
                 fake=fake,
             )
+            # Eligibility data-entry defects
+            if record["LAST_BUYBACK_LEAVE_END_DATE"] is not None:
+                if roll(mc["bbk_window_start_missing"], dirt_rng):
+                    record["LAST_BUYBACK_LEAVE_END_DATE"] = None
+                elif roll(mc["bbk_window_start_future"], dirt_rng):
+                    record["LAST_BUYBACK_LEAVE_END_DATE"] = (
+                        snapshot_date + timedelta(days=dirt_rng.randint(30, 400))
+                    )
             w.write_detail(record)
 
             # Tally stats
