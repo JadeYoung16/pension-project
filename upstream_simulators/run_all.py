@@ -35,11 +35,14 @@ from upstream_simulators.generators import call_log_generator
 from upstream_simulators.generators import seminar_generator
 from upstream_simulators.generators import email_engagement_generator
 from upstream_simulators.generators import salary_history_generator   
+from upstream_simulators.generators import journey_simulator
 
 
 STAGES = [
     ("1", "Employer Registry", employer_generator),
     ("2", "Member Census", member_generator),
+    ("2", "Member Census", member_generator),
+    ("2b", "Buyback Journey (ground truth)", journey_simulator),
     ("3a", "Transactions", transaction_generator),
     ("3b", "Life Events (buyback)", life_event_generator),
     ("3c", "Portal Events", portal_event_generator),
