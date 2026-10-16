@@ -26,6 +26,8 @@ seeds:
   seminar: 49
   email: 50
   salary: 51
+  journey: 52
+  campaign_dirt: 53
 
 contributions:
   member_rate: 0.03
@@ -228,8 +230,51 @@ engagement:
 history:
   life_events_months: 24
   transactions_months: 3
-  portal_events_months: 3
+  portal_events_months: 12
   call_logs_months: 3
-  email_engagement_months: 3
+  email_engagement_months: 12
   seminar_attendance_years: 2
   member_census_snapshots: 2
+
+
+# --- Buyback campaign experiment (added 2026-10) ------------------------------
+# Randomized buyback reminder campaign. Consumed by journey_simulator (ground
+# truth) and the email / portal / life_event renderers.
+campaign:
+  campaign_id: CAMP_2023_BBK_WINDOW
+  campaign_name: "Buyback Window Reminder"
+  utm_campaign: bbk_window_2023
+  landing_url: "https://oncap.example.org/buyback/info"
+  assignment_date: "2023-06-15"        # list pulled from CRM
+  treatment_send_date: "2023-07-05"    # avoids Canada Day week
+  control_send_date: "2023-10-04"      # delayed treatment after observation
+  observation_days: 90
+  treatment_share: 0.50
+  # Members whose window closes within N months of launch are always emailed
+  # and excluded from randomization (guardrail against member harm).
+  deadline_guardrail_months: 6
+
+eligibility:
+  window_months: 24
+  open_option_max_months: 60
+
+journey:
+  # Monthly application hazard = h_base x window factor x campaign factor.
+  # h_base is derived per member from buyback.propensity (24-month probability).
+  deadline_surge_months: 4
+  deadline_surge_multiplier: 2.0
+  open_option_multiplier: 0.4
+  campaign_effect_days: 90
+  campaign_multiplier:
+    within_window: 1.6
+    open_option: 1.15
+  # Open/click probability is scaled by the member's relative propensity, so
+  # clickers are self-selected (higher intent): naive click analysis overstates
+  # the effect, ITT does not.
+  human_open_rate: 0.30
+  click_given_open: 0.20
+  click_without_open_share: 0.08       # image-blocked: click with no open pixel
+  organic_info_view_monthly: 0.03
+  paper_application_rate:
+    under_60: 0.15
+    age_60_plus: 0.40

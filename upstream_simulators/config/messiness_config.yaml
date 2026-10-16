@@ -20,6 +20,8 @@ member_census:
   trailing_whitespace: 0.05
   non_ascii_name: 0.01
   dob_format_drift: 0.01              # Non-standard date format
+  bbk_window_start_missing: 0.005     # eligible but start date not keyed
+  bbk_window_start_future: 0.002      # typo: start date in the future
 
 salary_history:
   missing_annual_salary: 0.02      # portal 必填偶漏
@@ -39,12 +41,22 @@ life_events:
   timezone_mixed: 0.10                # EST vs UTC
   notes_garbage_text: 0.05
   quote_abandoned_after_issue: 0.15   # Quote issued but no complete
+  paper_entry_lag_days: [7, 21]       # paper forms keyed after receipt
+  reapply_rate: 0.02                  # cancelled then re-applied
 
 portal_events:
   user_agent_missing: 0.03
   ip_hash_null: 0.05                  # Mobile app users
   malformed_json: 0.0001              # 1 per 10,000 rows
   timestamp_in_utc: 0.20              # Instead of local TZ
+  anonymous_landing_rate: 0.35        # clicked from email before logging in
+  safelinks_domains: [outlook.com, hotmail.com]   # Outlook rewrites links
+  utm_lost_rate: 0.05
+  utm_case_variant_rate: 0.10
+  uptime_monitor_start: "2023-11-01"  # ops monitor added; hits every 5 min
+  uptime_monitor_interval_minutes: 5
+  double_fire_rate: 0.02              # tag fires twice within 1s
+  late_file_rate: 0.03                # event lands in next day's file (UTC cutoff)
 
 call_logs:
   csat_score_null: 0.30
@@ -56,3 +68,18 @@ seminar_attendance:
 email_engagement:
   bounce_rate: 0.08
   unsubscribe_rate: 0.005
+  apple_mpp_member_share: 0.17        # ~40% of all opens become machine opens
+  webhook_duplicate_rate: 0.01
+  security_scanner_click_rate: 0.01
+  hard_bounce_share: 0.25
+  suppression_lag_resend: 0.10        # hard-bounced address emailed again
+  unsub_not_honored: 0.05             # unsubscribed member emailed later
+  schema_change_date: "2023-09-15"    # ESP adds bounce_type, reorders columns
+
+
+campaign_assignment:
+  v2_refresh_date: "2023-06-30"       # marketing re-exports, drops early appliers
+  v2_saved_in_excel: true             # leading zeros lost, M/D/YYYY dates, renamed headers
+  total_row: true                     # "Total: N" row appended in Excel
+  arm_label_variant_rate: 0.03        # Treatment / treatment / TRT / Holdout
+  control_contamination: 0.01         # control members wrongly in first send
