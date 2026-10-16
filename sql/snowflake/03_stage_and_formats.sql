@@ -1,57 +1,71 @@
 -- =============================================================================
--- Snowflake: stage + file formats for RAW_ONCAP / RAW_EXTERNAL loading
+-- Snowflake: external stage + file formats for RAW_ONCAP / RAW_EXTERNAL loading
 -- =============================================================================
--- Day 5 of Week 4. One internal stage shared across both schemas (table
--- separation via subdirectory prefix). Three file format objects cover
--- our 3 native source formats; fixed-width member_census is preprocessed
--- to CSV locally and uses CSV_FORMAT (see loaders/snowflake/preprocess.py
--- in Day 5).
+-- ELT path: local extracts -> ADLS Gen2 (landing) -> LANDING_STAGE -> COPY INTO.
+-- Replaces the Week 4 internal stage (@LOAD_STAGE + PUT): files are now landed
+-- by loaders/azure/upload_to_adls.py, and Snowflake reads them in place through
+-- the AZURE_LANDING_INT storage integration (03a_azure_storage_integration.sql).
+--
+-- Stage layout mirrors the landing zone:
+--   @LANDING_STAGE/<source_system>/<dataset>/<file>
+--   e.g. @LANDING_STAGE/esp/email_engagement/ONCAP001_EMAIL_ENGAGEMENT_202309.csv
 -- =============================================================================
 
 USE ROLE PENSION_DEVELOPER;
 USE WAREHOUSE PENSION_WH;
 USE DATABASE PENSION_DEV;
-
--- -----------------------------------------------------------------------------
--- Stage: internal named stage in raw_oncap
--- -----------------------------------------------------------------------------
--- File layout convention:
---   @LOAD_STAGE/<table_name>/<source_filename>
--- e.g. @LOAD_STAGE/employer_registry/ONCAP001_EMPLOYER_REGISTRY_20240131.csv
---      @LOAD_STAGE/t3010_ident/ident_2023_update.csv
---      @LOAD_STAGE/member_census/ONCAP001_MEMBER_CENSUS_20240131.csv  ← preprocessed
--- -----------------------------------------------------------------------------
 USE SCHEMA RAW_ONCAP;
 
-CREATE STAGE IF NOT EXISTS LOAD_STAGE
-  COMMENT = 'Shared internal stage for all raw_oncap + raw_external loading. Files organized by <table_name>/ subdirectory.';
+-- -----------------------------------------------------------------------------
+-- External stage over the ADLS Gen2 landing container
+-- -----------------------------------------------------------------------------
+CREATE STAGE IF NOT EXISTS LANDING_STAGE
+  URL = 'azure://oncaplandingjy26.blob.core.windows.net/landing/'
+  STORAGE_INTEGRATION = AZURE_LANDING_INT
+  COMMENT = 'External stage over ADLS Gen2 landing/. Read-only via AZURE_LANDING_INT.';
 
 -- -----------------------------------------------------------------------------
--- File format 1: CSV_FORMAT — for comma-delimited CSVs
+-- File format 1: CSV_FORMAT — positional CSV with a header line to skip
 -- -----------------------------------------------------------------------------
--- Used by: employer_registry, call_log, seminar_attendance, email_engagement,
---          t3010_ident, t3010_schedule3, member_census (after preprocess)
+-- Used by: employer_registry, call_log, seminar_attendance, salary_history,
+--          t3010_ident, t3010_schedule3, member_census (after preprocess),
+--          campaign_assignment
 -- -----------------------------------------------------------------------------
 CREATE OR REPLACE FILE FORMAT CSV_FORMAT
   TYPE = CSV
   FIELD_DELIMITER = ','
   SKIP_HEADER = 1
   FIELD_OPTIONALLY_ENCLOSED_BY = '"'
-  NULL_IF = ('', 'NULL', '\\N')          -- '\\N' matches Postgres COPY NULL convention
+  NULL_IF = ('', 'NULL', '\\N')
   EMPTY_FIELD_AS_NULL = TRUE
   TRIM_SPACE = FALSE                     -- preserve significant whitespace in raw layer
   ENCODING = 'UTF8'
-  COMMENT = 'Standard CSV: comma-delimited, double-quoted, header line, UTF-8';
+  COMMENT = 'Standard CSV: comma-delimited, double-quoted, header line skipped, UTF-8';
 
 -- -----------------------------------------------------------------------------
--- File format 2: PIPE_FORMAT — for pipe-delimited files (transactions, life_events)
+-- File format 2: CSV_HEADER_FORMAT — CSV matched BY COLUMN NAME
 -- -----------------------------------------------------------------------------
--- transactions have H + column-header + detail + T  → SKIP_HEADER = 2
--- life_events have only column-header + detail      → SKIP_HEADER = 1
--- We default to SKIP_HEADER = 0 here and override per-COPY-INTO; see Day 5 plan.
--- Also: H/T rows in transactions need separate handling (load to control table);
--- defer that to Day 5 design discussion (option: pre-filter in Python, or
--- COPY twice with PATTERN, or post-INSERT split).
+-- Used by: email_engagement. The ESP changed its export on 2023-09-15 (added
+-- bounce_type, reordered columns). Positional $1..$n mapping would silently
+-- load values into the wrong columns; PARSE_HEADER + MATCH_BY_COLUMN_NAME
+-- maps by header name, and columns absent from older files load as NULL.
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FILE FORMAT CSV_HEADER_FORMAT
+  TYPE = CSV
+  FIELD_DELIMITER = ','
+  PARSE_HEADER = TRUE                    -- header row supplies column names (SKIP_HEADER must be 0)
+  FIELD_OPTIONALLY_ENCLOSED_BY = '"'
+  NULL_IF = ('', 'NULL', '\\N')
+  EMPTY_FIELD_AS_NULL = TRUE
+  TRIM_SPACE = FALSE
+  ENCODING = 'UTF8'
+  COMMENT = 'CSV loaded by column name (schema-drift tolerant). Use with MATCH_BY_COLUMN_NAME.';
+
+-- -----------------------------------------------------------------------------
+-- File format 3: PIPE_FORMAT — pipe-delimited (transactions, life_events)
+-- -----------------------------------------------------------------------------
+-- transactions: H row + column header -> SKIP_HEADER = 2 (set per COPY)
+-- life_events:  column header only    -> SKIP_HEADER = 1 (set per COPY)
 -- -----------------------------------------------------------------------------
 CREATE OR REPLACE FILE FORMAT PIPE_FORMAT
   TYPE = CSV
@@ -62,24 +76,23 @@ CREATE OR REPLACE FILE FORMAT PIPE_FORMAT
   EMPTY_FIELD_AS_NULL = TRUE
   TRIM_SPACE = FALSE
   ENCODING = 'UTF8'
-  COMMENT = 'Pipe-delimited (CSV type with | delimiter). SKIP_HEADER overridden per COPY because transaction files have H+header (2) while life_events have header only (1).';
+  COMMENT = 'Pipe-delimited. SKIP_HEADER overridden per COPY (transaction=2, life_event=1).';
 
 -- -----------------------------------------------------------------------------
--- File format 3: JSON_FORMAT — for portal_event JSONL
--- -----------------------------------------------------------------------------
--- JSONL = one JSON object per line. Snowflake TYPE=JSON treats it as
--- semi-structured; we'll COPY INTO with explicit column extraction via
--- a SELECT, since portal_event has scalar columns + a VARIANT event_properties.
+-- File format 4: JSON_FORMAT — portal_event JSONL
 -- -----------------------------------------------------------------------------
 CREATE OR REPLACE FILE FORMAT JSON_FORMAT
   TYPE = JSON
-  STRIP_OUTER_ARRAY = FALSE              -- JSONL is one-object-per-line, not array
+  STRIP_OUTER_ARRAY = FALSE              -- JSONL is one object per line, not an array
   ALLOW_DUPLICATE = FALSE
   STRIP_NULL_VALUES = FALSE              -- preserve null fields in raw
-  COMMENT = 'JSONL (one JSON object per line). Extraction via SELECT in COPY INTO transformation.';
+  COMMENT = 'JSONL (one JSON object per line). Extraction via SELECT in COPY INTO.';
 
 -- -----------------------------------------------------------------------------
--- Verify
+-- Verify: Snowflake can see the landed files through the integration
 -- -----------------------------------------------------------------------------
-SHOW STAGES IN SCHEMA RAW_ONCAP;
-SHOW FILE FORMATS IN SCHEMA RAW_ONCAP;
+LIST @LANDING_STAGE/crm/campaign_assignment/;
+
+SELECT $1, $2, $3, $4
+FROM @LANDING_STAGE/crm/campaign_assignment/ (FILE_FORMAT => 'CSV_FORMAT')
+LIMIT 5;
