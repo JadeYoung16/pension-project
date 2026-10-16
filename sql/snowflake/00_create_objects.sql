@@ -9,11 +9,21 @@
 --   * ONCAP (TYPE=SERVICE)  -> pipelines (Python loaders, dbt, Airflow, CI);
 --                              key-pair only, cannot use a password, so MFA
 --                              enforcement never blocks automated runs.
--- The ONCAP public key is set in a separate step (ALTER USER ... SET
--- RSA_PUBLIC_KEY) so no key material lives in this file.
+--
+-- Run while logged in as your own user (section 0 picks it up automatically).
+-- After running: complete section 5 (ONCAP public key) once per account.
 -- =============================================================================
 
 USE ROLE ACCOUNTADMIN;
+
+-- ------------------------------------------------------------
+-- 0. Parameters
+-- ------------------------------------------------------------
+-- The user running this script, wrapped in double quotes so IDENTIFIER()
+-- matches it exactly. Signup-created users can be stored case-sensitive
+-- (e.g. lowercase); an unquoted name is upper-cased and would not match.
+-- Derived, not hard-coded: works in any account, keeps login names out of git.
+SET human_user = '"' || CURRENT_USER() || '"';
 
 -- ------------------------------------------------------------
 -- 1. Compute
@@ -68,11 +78,10 @@ GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON FUTURE TABLES IN DATABASE PENS
 -- ------------------------------------------------------------
 -- 4. Identities
 -- ------------------------------------------------------------
--- Human: the user running this script
-SET me = CURRENT_USER();
-GRANT ROLE PENSION_DEVELOPER TO USER IDENTIFIER($me);
+-- Human (quoted name from section 0)
+GRANT ROLE PENSION_DEVELOPER TO USER IDENTIFIER($human_user);
 
--- Pipeline service user (key-pair only; public key set separately)
+-- Pipeline service user (key-pair only; public key set in section 5)
 CREATE USER IF NOT EXISTS ONCAP
   TYPE = SERVICE
   DEFAULT_ROLE = PENSION_DEVELOPER
@@ -81,7 +90,23 @@ CREATE USER IF NOT EXISTS ONCAP
 GRANT ROLE PENSION_DEVELOPER TO USER ONCAP;
 
 -- ------------------------------------------------------------
--- 5. Verify
+-- 5. ONCAP public key (once per account, and on every key rotation)
+-- ------------------------------------------------------------
+-- The private key lives only in .secrets/snowflake_key.p8 (gitignored).
+-- In a terminal at the repo root:
+--   openssl pkey -in .secrets/snowflake_key.p8 -pubout -out .secrets/snowflake_key.pub
+--   grep -v "PUBLIC KEY" .secrets/snowflake_key.pub | tr -d '\n'; echo      # key body
+--   openssl pkey -pubin -in .secrets/snowflake_key.pub -outform DER \
+--     | openssl dgst -sha256 -binary | openssl enc -base64                  # fingerprint
+-- Paste the key body below (a public key is not secret), run the statement,
+-- then confirm DESC USER shows RSA_PUBLIC_KEY_FP = SHA256:<fingerprint>.
+--
+-- ALTER USER ONCAP SET RSA_PUBLIC_KEY = '<paste key body here>';
+
+-- ------------------------------------------------------------
+-- 6. Verify
 -- ------------------------------------------------------------
 SHOW SCHEMAS IN DATABASE PENSION_DEV;
-SHOW GRANTS TO USER ONCAP;
+SHOW GRANTS TO USER IDENTIFIER($human_user);   -- expect PENSION_DEVELOPER
+SHOW GRANTS TO USER ONCAP;                      -- expect PENSION_DEVELOPER
+DESC USER ONCAP;                                -- RSA_PUBLIC_KEY_FP set after section 5
