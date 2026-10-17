@@ -191,6 +191,7 @@ CREATE TABLE IF NOT EXISTS portal_event (
     page_path                   STRING,
     referrer                    STRING,
     event_properties            VARIANT,
+    _raw_line                   STRING,       -- malformed JSONL line kept verbatim (NULL when parsed OK)
     _source_file                STRING       NOT NULL,
     _row_num                    BIGINT       NOT NULL,
     _loaded_at                  TIMESTAMP_TZ NOT NULL DEFAULT CURRENT_TIMESTAMP()
@@ -243,6 +244,7 @@ CREATE TABLE IF NOT EXISTS email_engagement (
     event_type                       STRING,
     event_timestamp                  TIMESTAMP_TZ,
     link_url_clicked                 STRING,
+    bounce_type                      STRING,          -- added by ESP from 2023-09; NULL in older files
     _source_file                     STRING       NOT NULL,
     _row_num                         BIGINT       NOT NULL,
     _loaded_at                       TIMESTAMP_TZ NOT NULL DEFAULT CURRENT_TIMESTAMP()
@@ -263,6 +265,24 @@ CREATE TABLE IF NOT EXISTS salary_history (
     _loaded_at                       TIMESTAMP_TZ NOT NULL DEFAULT CURRENT_TIMESTAMP()
 );
 
+-- -----------------------------------------------------------------------------
+-- Table 12: campaign_assignment  (CRM export; v1 CSV + v2 Excel re-export)
+-- -----------------------------------------------------------------------------
+-- All STRING on purpose: v2 was saved in Excel (leading zeros stripped from
+-- member_id, M/D/YYYY dates, a "Total: N" footer row). Raw keeps exactly what
+-- the file contained; normalization happens in staging.
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS campaign_assignment (
+    member_id                        STRING,
+    campaign_id                      STRING,
+    segment                          STRING,
+    arm                              STRING,
+    assigned_date                    STRING,
+    scheduled_send_date              STRING,
+    _source_file                     STRING       NOT NULL,
+    _row_num                         BIGINT       NOT NULL,
+    _loaded_at                       TIMESTAMP_TZ NOT NULL DEFAULT CURRENT_TIMESTAMP()
+);
 
 -- -----------------------------------------------------------------------------
 -- Meta: _rejected

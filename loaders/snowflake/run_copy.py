@@ -1,7 +1,8 @@
 """
 Execute COPY INTO statements to load staged files into RAW_ONCAP / RAW_EXTERNAL.
 
-Runs AFTER put_files.py has PUT source files into @LOAD_STAGE.
+Runs AFTER loaders/azure/upload_to_adls.py has landed source files in ADLS;
+COPY reads them through the external stage @LANDING_STAGE.
 Reads sql/snowflake/04_copy_into.sql, splits on ';', executes each COPY,
 and prints rows_loaded / errors_seen per table (COPY INTO returns a result set).
 
@@ -79,10 +80,15 @@ def main():
             cur.execute(u)
 
         total_loaded = 0
+        truncated = set()
         for stmt in copy_stmts:
             tbl = target_of(stmt)
-            if tbl in trunc_by_table:
-                cur.execute(trunc_by_table[tbl])   # TRUNCATE before COPY → 确定性重载
+            # TRUNCATE once per table, before its FIRST COPY. A table can have
+            # several COPYs (campaign_assignment: v1 + v2 file layouts); a
+            # TRUNCATE before each one would wipe the rows the previous COPY loaded.
+            if tbl in trunc_by_table and tbl not in truncated:
+                cur.execute(trunc_by_table[tbl])   # also clears load metadata → deterministic full reload
+                truncated.add(tbl)
             cur.execute(stmt)
             rows = cur.fetchall()
 

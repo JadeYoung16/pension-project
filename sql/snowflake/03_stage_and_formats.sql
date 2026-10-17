@@ -54,6 +54,9 @@ CREATE OR REPLACE FILE FORMAT CSV_HEADER_FORMAT
   TYPE = CSV
   FIELD_DELIMITER = ','
   PARSE_HEADER = TRUE                    -- header row supplies column names (SKIP_HEADER must be 0)
+  ERROR_ON_COLUMN_COUNT_MISMATCH = FALSE -- file has 7-8 cols, table 11 (+ audit cols); mapping is by name
+                                         -- trade-off: a NEW vendor column absent from the table is ignored
+                                         -- silently -> guard with a header check in staging
   FIELD_OPTIONALLY_ENCLOSED_BY = '"'
   NULL_IF = ('', 'NULL', '\\N')
   EMPTY_FIELD_AS_NULL = TRUE
@@ -87,6 +90,26 @@ CREATE OR REPLACE FILE FORMAT JSON_FORMAT
   ALLOW_DUPLICATE = FALSE
   STRIP_NULL_VALUES = FALSE              -- preserve null fields in raw
   COMMENT = 'JSONL (one JSON object per line). Extraction via SELECT in COPY INTO.';
+
+-- -----------------------------------------------------------------------------
+-- File format 5: JSONL_LINE_FORMAT — each JSONL line as one raw text field
+-- -----------------------------------------------------------------------------
+-- Used by: portal_event. With TYPE = JSON, ON_ERROR = CONTINUE skips a WHOLE
+-- FILE when one line is malformed (a day of events lost). Reading each line
+-- as text and parsing with TRY_PARSE_JSON in the COPY keeps every good row
+-- and quarantines only the bad line (kept verbatim in _raw_line).
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FILE FORMAT JSONL_LINE_FORMAT
+  TYPE = CSV
+  FIELD_DELIMITER = NONE                 -- whole line is one field
+  RECORD_DELIMITER = '\n'
+  FIELD_OPTIONALLY_ENCLOSED_BY = NONE
+  ESCAPE_UNENCLOSED_FIELD = NONE         -- keep backslashes inside JSON untouched
+  SKIP_HEADER = 0
+  NULL_IF = ()
+  EMPTY_FIELD_AS_NULL = FALSE
+  ENCODING = 'UTF8'
+  COMMENT = 'One JSONL line per row as raw text; parse with TRY_PARSE_JSON in COPY.';
 
 -- -----------------------------------------------------------------------------
 -- Verify: Snowflake can see the landed files through the integration

@@ -1,19 +1,32 @@
 -- =============================================================================
--- Snowflake: COPY INTO — load staged files into RAW_ONCAP / RAW_EXTERNAL tables
+-- Snowflake: COPY INTO — load landed files into RAW_ONCAP / RAW_EXTERNAL
 -- =============================================================================
--- Week 7 (Airflow): scripted from the Day-5 Snowsight worksheet that was never
--- committed. Runs AFTER put_files.py has PUT source files into @LOAD_STAGE.
--- Depends on objects from 03_stage_and_formats.sql (stage + CSV/PIPE/JSON formats).
+-- Source: @LANDING_STAGE (external stage over ADLS Gen2 landing/, see 03_*.sql)
+--   path = <source_system>/<dataset>/   (mirrors loaders/azure/upload_to_adls.py)
 --
--- Per-table specifics preserved verbatim from the validated Day-5 version:
---   - transaction : PIPE_FORMAT, SKIP_HEADER = 2  (H-row + column header)
---   - life_event  : PIPE_FORMAT, SKIP_HEADER = 1  (column header only)
---   - portal_event: JSON_FORMAT, VARIANT extraction via $1:field::type
---   - all others  : CSV_FORMAT  (SKIP_HEADER = 1 from the format object)
--- All COPYs use ON_ERROR = CONTINUE (row-level reject for CSV/PIPE;
---   file-level for JSON — portal_event under-loads by design, see Day-5 notes).
--- _source_file / _row_num audit columns come from METADATA$FILENAME /
---   METADATA$FILE_ROW_NUMBER.
+-- Idempotency: every table is TRUNCATEd once before its COPY(s). TRUNCATE also
+-- clears Snowflake load metadata, so a re-run reloads the full set instead of
+-- skipping "already loaded" files — and no file is ever loaded twice.
+--
+-- Per-table specifics:
+--   transaction        PIPE_FORMAT, SKIP_HEADER = 2 (H row + column header)
+--   life_event         PIPE_FORMAT, SKIP_HEADER = 1
+--   email_engagement   CSV_HEADER_FORMAT + MATCH_BY_COLUMN_NAME: the ESP export
+--                      changed on 2023-09-15 (bounce_type added, columns
+--                      reordered). Loading by name, not position, keeps every
+--                      value in the right column. bounce_type is NULL before.
+--   campaign_assignment  two COPYs into one table: v1 (CRM export) and v2
+--                      (Excel re-save with renamed, reordered headers) need
+--                      different column mappings. Raw keeps both versions.
+--   portal_event       JSONL_LINE_FORMAT + TRY_PARSE_JSON: a malformed line is
+--                      kept verbatim in _raw_line instead of the whole file
+--                      being skipped.
+--   others             CSV_FORMAT (SKIP_HEADER = 1)
+-- All COPYs use ON_ERROR = CONTINUE. Audit columns: METADATA$FILENAME /
+-- METADATA$FILE_ROW_NUMBER.
+--
+-- Executed by loaders/snowflake/run_copy.py (splits on semicolons, so keep
+-- semicolons and apostrophes out of comments).
 -- =============================================================================
 
 USE ROLE PENSION_DEVELOPER;
@@ -21,18 +34,21 @@ USE WAREHOUSE PENSION_WH;
 USE DATABASE PENSION_DEV;
 USE SCHEMA RAW_ONCAP;
 
-TRUNCATE TABLE employer_registry;        
-TRUNCATE TABLE life_event;
+TRUNCATE TABLE employer_registry;
 TRUNCATE TABLE member_census;
-TRUNCATE TABLE portal_event;
+TRUNCATE TABLE life_event;
 TRUNCATE TABLE transaction;
+TRUNCATE TABLE salary_history;
 TRUNCATE TABLE email_engagement;
+TRUNCATE TABLE portal_event;
+TRUNCATE TABLE campaign_assignment;
 TRUNCATE TABLE seminar_attendance;
 TRUNCATE TABLE call_log;
-TRUNCATE TABLE salary_history;
 TRUNCATE TABLE RAW_EXTERNAL.t3010_ident;
 TRUNCATE TABLE RAW_EXTERNAL.t3010_schedule3;
 
+
+-- pension_admin ---------------------------------------------------------------
 
 COPY INTO employer_registry (
     employer_id, business_number, legal_name, operating_name,
@@ -46,30 +62,10 @@ FROM (
     SELECT
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
         $12, $13, $14, $15, $16, $17, $18,
-        METADATA$FILENAME,           -- _source_file
-        METADATA$FILE_ROW_NUMBER     -- _row_num
-    FROM @LOAD_STAGE/employer_registry/
+        METADATA$FILENAME, METADATA$FILE_ROW_NUMBER
+    FROM @LANDING_STAGE/pension_admin/employer_registry/
 )
 FILE_FORMAT = (FORMAT_NAME = CSV_FORMAT)
-ON_ERROR = CONTINUE;
-
-
-COPY INTO life_event (
-    event_id, member_id, employer_id, event_type_code, event_date,
-    event_timestamp, buyback_category_code, buyback_service_years,
-    leave_end_date, months_since_eligibility, is_within_window,
-    is_open_option, member_cost, employer_cost, total_cost,
-    payment_method, installment_months, event_status, channel_code, notes,
-    _source_file, _row_num
-)
-FROM (
-    SELECT
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-        $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-        METADATA$FILENAME, METADATA$FILE_ROW_NUMBER
-    FROM @LOAD_STAGE/life_event/
-)
-FILE_FORMAT = (FORMAT_NAME = PIPE_FORMAT, SKIP_HEADER = 1)
 ON_ERROR = CONTINUE;
 
 
@@ -92,37 +88,32 @@ FROM (
         $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
         $31, $32, $33,
         METADATA$FILENAME, METADATA$FILE_ROW_NUMBER
-    FROM @LOAD_STAGE/member_census/
+    FROM @LANDING_STAGE/pension_admin/member_census/
 )
 FILE_FORMAT = (FORMAT_NAME = CSV_FORMAT)
 ON_ERROR = CONTINUE;
 
 
-COPY INTO portal_event (
-    event_id, member_id, event_timestamp, event_type,
-    session_id, ip_hash, user_agent, page_path, referrer,
-    event_properties,
+COPY INTO life_event (
+    event_id, member_id, employer_id, event_type_code, event_date,
+    event_timestamp, buyback_category_code, buyback_service_years,
+    leave_end_date, months_since_eligibility, is_within_window,
+    is_open_option, member_cost, employer_cost, total_cost,
+    payment_method, installment_months, event_status, channel_code, notes,
     _source_file, _row_num
 )
 FROM (
     SELECT
-        $1:event_id::STRING,
-        $1:member_id::STRING,
-        $1:event_timestamp::TIMESTAMP_TZ,
-        $1:event_type::STRING,
-        $1:session_id::STRING,
-        $1:ip_hash::STRING,
-        $1:user_agent::STRING,
-        $1:page_path::STRING,
-        $1:referrer::STRING,
-        $1:event_properties,
-        METADATA$FILENAME,
-        METADATA$FILE_ROW_NUMBER
-    FROM @LOAD_STAGE/portal_event/
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+        $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+        METADATA$FILENAME, METADATA$FILE_ROW_NUMBER
+    FROM @LANDING_STAGE/pension_admin/life_event/
 )
-FILE_FORMAT = (FORMAT_NAME = JSON_FORMAT)
+FILE_FORMAT = (FORMAT_NAME = PIPE_FORMAT, SKIP_HEADER = 1)
 ON_ERROR = CONTINUE;
 
+
+-- employer_sftp ---------------------------------------------------------------
 
 COPY INTO transaction (
     transaction_id, member_id, employer_id, pay_date,
@@ -135,23 +126,97 @@ FROM (
     SELECT
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
         METADATA$FILENAME, METADATA$FILE_ROW_NUMBER
-    FROM @LOAD_STAGE/transaction/
+    FROM @LANDING_STAGE/employer_sftp/transaction/
 )
 FILE_FORMAT = (FORMAT_NAME = PIPE_FORMAT, SKIP_HEADER = 2)
 ON_ERROR = CONTINUE;
 
 
-COPY INTO email_engagement (
-    event_id, member_id, campaign_id, campaign_name,
-    event_type, event_timestamp, link_url_clicked,
+COPY INTO salary_history (
+    member_id, employer_id, effective_date, annual_salary,
+    change_reason, reported_at,
     _source_file, _row_num
 )
 FROM (
     SELECT
-        $1, $2, $3, $4, $5, $6, $7,
+        $1, $2, $3, $4, $5, $6,
         METADATA$FILENAME, METADATA$FILE_ROW_NUMBER
-    FROM @LOAD_STAGE/email_engagement/
+    FROM @LANDING_STAGE/employer_sftp/salary_history/
 )
+FILE_FORMAT = (FORMAT_NAME = CSV_FORMAT)
+ON_ERROR = CONTINUE;
+
+
+-- esp: load BY COLUMN NAME across the 2023-09 schema change -------------------
+
+COPY INTO email_engagement
+FROM @LANDING_STAGE/esp/email_engagement/
+FILE_FORMAT = (FORMAT_NAME = CSV_HEADER_FORMAT)
+MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+INCLUDE_METADATA = (
+    _source_file = METADATA$FILENAME,
+    _row_num     = METADATA$FILE_ROW_NUMBER,
+    _loaded_at   = METADATA$START_SCAN_TIME   -- column DEFAULTs are not applied with MATCH_BY_COLUMN_NAME
+)
+ON_ERROR = CONTINUE;
+
+
+-- web_analytics: line-level JSON parsing ---------------------------------------
+
+COPY INTO portal_event (
+    event_id, member_id, event_timestamp, event_type,
+    session_id, ip_hash, user_agent, page_path, referrer,
+    event_properties, _raw_line,
+    _source_file, _row_num
+)
+FROM (
+    SELECT
+        TRY_PARSE_JSON($1):event_id::STRING,
+        TRY_PARSE_JSON($1):member_id::STRING,
+        TRY_PARSE_JSON($1):event_timestamp::TIMESTAMP_TZ,
+        TRY_PARSE_JSON($1):event_type::STRING,
+        TRY_PARSE_JSON($1):session_id::STRING,
+        TRY_PARSE_JSON($1):ip_hash::STRING,
+        TRY_PARSE_JSON($1):user_agent::STRING,
+        TRY_PARSE_JSON($1):page_path::STRING,
+        TRY_PARSE_JSON($1):referrer::STRING,
+        TRY_PARSE_JSON($1):event_properties,
+        IFF(TRY_PARSE_JSON($1) IS NULL, $1, NULL),
+        METADATA$FILENAME, METADATA$FILE_ROW_NUMBER
+    FROM @LANDING_STAGE/web_analytics/portal_event/
+)
+FILE_FORMAT = (FORMAT_NAME = JSONL_LINE_FORMAT)
+ON_ERROR = CONTINUE;
+
+
+-- crm: two export versions with different column orders ------------------------
+
+COPY INTO campaign_assignment (
+    member_id, campaign_id, segment, arm, assigned_date, scheduled_send_date,
+    _source_file, _row_num
+)
+FROM (
+    SELECT
+        $1, $2, $3, $4, $5, $6,
+        METADATA$FILENAME, METADATA$FILE_ROW_NUMBER
+    FROM @LANDING_STAGE/crm/campaign_assignment/
+)
+PATTERN = '.*_v1_.*[.]csv'
+FILE_FORMAT = (FORMAT_NAME = CSV_FORMAT)
+ON_ERROR = CONTINUE;
+
+
+COPY INTO campaign_assignment (
+    member_id, campaign_id, segment, arm, assigned_date, scheduled_send_date,
+    _source_file, _row_num
+)
+FROM (
+    SELECT
+        $1, $5, $3, $2, $6, $4,
+        METADATA$FILENAME, METADATA$FILE_ROW_NUMBER
+    FROM @LANDING_STAGE/crm/campaign_assignment/
+)
+PATTERN = '.*_v2_FINAL_.*[.]csv'
 FILE_FORMAT = (FORMAT_NAME = CSV_FORMAT)
 ON_ERROR = CONTINUE;
 
@@ -165,11 +230,13 @@ FROM (
     SELECT
         $1, $2, $3, $4, $5, $6, $7, $8,
         METADATA$FILENAME, METADATA$FILE_ROW_NUMBER
-    FROM @LOAD_STAGE/seminar_attendance/
+    FROM @LANDING_STAGE/crm/seminar_attendance/
 )
 FILE_FORMAT = (FORMAT_NAME = CSV_FORMAT)
 ON_ERROR = CONTINUE;
 
+
+-- contact_center --------------------------------------------------------------
 
 COPY INTO call_log (
     call_id, member_id, call_timestamp, duration_seconds,
@@ -181,11 +248,13 @@ FROM (
     SELECT
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
         METADATA$FILENAME, METADATA$FILE_ROW_NUMBER
-    FROM @LOAD_STAGE/call_log/
+    FROM @LANDING_STAGE/contact_center/call_log/
 )
 FILE_FORMAT = (FORMAT_NAME = CSV_FORMAT)
 ON_ERROR = CONTINUE;
 
+
+-- cra_t3010 (target schema RAW_EXTERNAL, so stage and format fully qualified) ---
 
 COPY INTO RAW_EXTERNAL.t3010_ident (
     bn, category, sub_category, designation, legal_name, account_name,
@@ -196,7 +265,7 @@ FROM (
     SELECT
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
         METADATA$FILENAME, METADATA$FILE_ROW_NUMBER
-    FROM @PENSION_DEV.RAW_ONCAP.LOAD_STAGE/t3010_ident/
+    FROM @PENSION_DEV.RAW_ONCAP.LANDING_STAGE/cra_t3010/t3010_ident/
 )
 FILE_FORMAT = (FORMAT_NAME = PENSION_DEV.RAW_ONCAP.CSV_FORMAT)
 ON_ERROR = CONTINUE;
@@ -214,21 +283,7 @@ FROM (
         $4, $5, $6, $7, $8, $9, $10, $11,
         $12, $13, $14, $15, $16,
         METADATA$FILENAME, METADATA$FILE_ROW_NUMBER
-    FROM @PENSION_DEV.RAW_ONCAP.LOAD_STAGE/t3010_schedule3/
+    FROM @PENSION_DEV.RAW_ONCAP.LANDING_STAGE/cra_t3010/t3010_schedule3/
 )
 FILE_FORMAT = (FORMAT_NAME = PENSION_DEV.RAW_ONCAP.CSV_FORMAT)
-ON_ERROR = CONTINUE;
-
-COPY INTO salary_history (
-    member_id, employer_id, effective_date, annual_salary,
-    change_reason, reported_at,
-    _source_file, _row_num
-)
-FROM (
-    SELECT
-        $1, $2, $3, $4, $5, $6,
-        METADATA$FILENAME, METADATA$FILE_ROW_NUMBER
-    FROM @LOAD_STAGE/salary_history/
-)
-FILE_FORMAT = (FORMAT_NAME = CSV_FORMAT)
 ON_ERROR = CONTINUE;
