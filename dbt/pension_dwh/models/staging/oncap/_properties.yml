@@ -807,7 +807,81 @@ models:
       - name: loaded_at
         description: "Timestamp when raw row was loaded into Snowflake."
 
+# ===========================================================================
+  - name: stg_oncap__campaign_assignment
+    description: >
+      One row per member per campaign.  PK = (campaign_id, member_id).
+      Attributes from the earliest file version (original CRM assignment);
+      in_final_send_list = member appears in the latest file version.
+      CAMP_2023_BBK_WINDOW: 6,295 assigned, 6,219 in final list.
+      Guardrail members (not randomized) are kept; experiment analysis
+      filters to arm in ('treatment', 'control') downstream.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - campaign_id
+              - member_id
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "length(member_id) = 10"
+    columns:
 
+      - name: campaign_id
+        description: "Campaign identifier, e.g. CAMP_2023_BBK_WINDOW."
+        data_tests:
+          - not_null
+
+      - name: member_id
+        description: "FK to stg_oncap__member_census. Zero-padded to 10 chars."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_oncap__member_census')
+                field: member_id
+              config:
+                severity: warn
+
+      - name: segment
+        description: "Randomization stratum."
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['within_window', 'open_option', 'guardrail']
+
+      - name: arm
+        description: >
+          Normalized experiment arm.  Unknown raw labels pass through
+          unmapped so this test surfaces them.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['treatment', 'control', 'guardrail']
+
+      - name: assigned_date
+        description: "Randomization date."
+        data_tests:
+          - not_null
+
+      - name: scheduled_send_date
+        description: "Planned email send date. Anchors the 90-day outcome window."
+        data_tests:
+          - not_null
+
+      - name: in_final_send_list
+        description: >
+          TRUE if member appears in the latest file version.  FALSE for the
+          76 members removed in v2 (applied before assignment date).
+        data_tests:
+          - not_null
+
+      - name: source_file_version
+        description: "Version number parsed from file name (_vN_). NULL = file naming broke."
+        data_tests:
+          - not_null
 # ===========================================================================
 
   - name: stg_oncap__transaction

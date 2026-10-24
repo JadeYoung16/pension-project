@@ -70,7 +70,17 @@ sources:
           intentional dirty data (missing/negative/outlier/duplicate/
           backdated/orphan) for data-quality testing. No freshness configured
           (one-time portfolio load, not a recurring feed).
-          
+      
+      - name: campaign_assignment
+        description: >
+          CRM experiment assignment lists for marketing campaigns. One row per
+          member per campaign per file version (_source_file). Two versions
+          for CAMP_2023_BBK_WINDOW: v1 (CRM export, 2023-06-15, 6,295 members)
+          and v2_FINAL (Excel-edited send list, 2023-06-30, 6,219 members plus
+          one 'Total' summary row). v2 has leading zeros stripped from
+          member_id, M/D/YYYY dates, and inconsistent arm labels. All columns
+          VARCHAR.
+
       # --- control / audit tables (4, currently 0-row but declared for completeness)
       - name: member_census_control
         description: >
