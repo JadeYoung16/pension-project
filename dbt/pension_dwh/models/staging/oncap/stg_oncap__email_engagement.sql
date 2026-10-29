@@ -1,22 +1,28 @@
 -- =============================================================================
 -- stg_oncap__email_engagement
 -- =============================================================================
--- One row per email event. Grain: event (not email).
--- 227,502 rows = ~50k unique emails × ~4.5 events per email funnel.
+-- One row per email event. Grain: event. PK = event_id.
+-- Covers all campaigns in the ESP export (no business filtering here).
 --
 -- Event funnel:
 --   SENT → DELIVERED → OPENED → CLICKED   (happy path)
---                    → BOUNCED             (delivery failure)
---                    → UNSUBSCRIBED        (CAN-SPAM compliance)
+--        → BOUNCED                         (delivery failure)
+--   UNSUBSCRIBED                           (compliance)
 --
--- 1:1 mirror of raw with:
---   - lowercase normalization on event_type (A: UPPERCASE enum)
---   - preserve campaign_id as identifier (NOT lowered, treated as ID
---     not status enum; campaign count grows over time)
---   - preserve campaign_name (C: display, 1:1 with campaign_id —
---     normalization to dim_campaign deferred to mart layer)
---   - preserve link_url_clicked (URL, case-sensitive; NULL when
---     event_type != 'clicked', already cleanly NULL in raw)
+-- Transformations:
+--   1. Dedup on event_id. Raw contains exact duplicate rows (ESP webhook
+--      re-delivery, 2 copies, same file). Keep the first copy by
+--      (_source_file, _row_num) so the result is deterministic.
+--      Assumption that copies are identical is enforced by
+--      tests/assert_email_engagement_duplicate_ids_identical.sql (on source).
+--   2. event_type lowercased (raw is UPPERCASE).
+--   3. bounce_type: ESP added this column in the 2023-09 export. Earlier
+--      files have no bounce classification, so bounced events from those
+--      files are set to 'unknown'. Non-bounce events stay NULL
+--      (NULL = not applicable, 'unknown' = bounce with no classification).
+--
+-- Not done here (business rules → intermediate):
+--   - suspected bot opens / clicks (delivery-to-open gap heuristic)
 -- =============================================================================
 
 with
@@ -24,6 +30,17 @@ with
 source as (
 
     select * from {{ source('raw_oncap', 'email_engagement') }}
+
+),
+
+deduplicated as (
+
+    select *
+    from source
+    qualify row_number() over (
+        partition by event_id
+        order by _source_file, _row_num
+    ) = 1
 
 ),
 
@@ -36,22 +53,27 @@ renamed as (
         member_id,                                                   -- FK
         campaign_id,                                                 -- identifier, not enum
 
-        -- --- campaign metadata (preserved; 1:1 with campaign_id) -----------
-        campaign_name,                                               -- C: display
+        -- --- campaign metadata (1:1 with campaign_id) ----------------------
+        campaign_name,
 
         -- --- event details -------------------------------------------------
-        lower(event_type)           as event_type,                   -- A: UPPERCASE -> lower
-        event_timestamp,                                             -- already TIMESTAMP_TZ
+        lower(event_type)           as event_type,                   -- UPPERCASE -> lower
+        event_timestamp,                                             -- TIMESTAMP_TZ, UTC
 
-        -- --- click-specific (NULL when event_type != 'clicked') ------------
-        link_url_clicked,                                            -- URL, case-sensitive
+        -- --- type-specific columns -----------------------------------------
+        link_url_clicked,                                            -- clicked only
+        case
+            when lower(event_type) = 'bounced' and bounce_type is null
+                then 'unknown'
+            else bounce_type
+        end                         as bounce_type,                  -- bounced only
 
         -- --- audit pass-through --------------------------------------------
-        _source_file        as source_file,
-        _row_num            as source_row_num,
-        _loaded_at          as loaded_at
+        _source_file                as source_file,
+        _row_num                    as source_row_num,
+        _loaded_at                  as loaded_at
 
-    from source
+    from deduplicated
 
 )
 

@@ -576,18 +576,15 @@ models:
 
   - name: stg_oncap__email_engagement
     description: >
-      One row per email event. Grain: event (not email).
-      Row count: 227,502 (~50k unique emails × ~4.5 events per email funnel).
-      
-      Event funnel: SENT → DELIVERED → OPENED → CLICKED.
-      Failure paths: BOUNCED (delivery failure), UNSUBSCRIBED (compliance).
-      
-      Campaign normalization: campaign_id and campaign_name are 1:1 in
-      raw; would normalize to dim_campaign in mart layer.
+      One row per email event. Grain: event. PK = event_id.
+      All campaigns in the ESP export (no business filtering).
+      Deduplicated on event_id (raw has exact duplicate rows from ESP
+      webhook re-delivery). Suspected bot opens/clicks are flagged in
+      intermediate, not here.
     columns:
 
       - name: event_id
-        description: "PK. Format: EML{YYYYMMDD}{6-digit sequence}."
+        description: "PK. Deduplicated (first copy by source_file, source_row_num)."
         data_tests:
           - unique
           - not_null
@@ -597,39 +594,46 @@ models:
         data_tests:
           - not_null
           - relationships:
-              to: ref('stg_oncap__member_census')
-              field: member_id
+              arguments:
+                to: ref('stg_oncap__member_census')
+                field: member_id
 
       - name: campaign_id
         description: >
-          Campaign identifier. Current values: CAMP_NEWSLETTER,
-          CAMP_Q1_2024_STMT. Preserved as identifier (case kept);
-          new campaigns added over time, so no accepted_values lock.
+          Campaign identifier. Preserved as-is; new campaigns are added
+          over time, so no accepted_values lock.
         data_tests:
           - not_null
 
       - name: campaign_name
-        description: >
-          Human-readable campaign name, 1:1 with campaign_id.
-          Display-bound; preserved case. Candidate for dim_campaign
-          extraction in mart layer.
+        description: "Human-readable campaign name, 1:1 with campaign_id."
 
       - name: event_type
         description: "Email funnel event (lowercased from raw UPPERCASE)."
         data_tests:
           - not_null
           - accepted_values:
-              values: ['sent', 'delivered', 'opened', 'clicked', 'bounced', 'unsubscribed']
+              arguments:
+                values: ['sent', 'delivered', 'opened', 'clicked', 'bounced', 'unsubscribed']
 
       - name: event_timestamp
-        description: "Event timestamp (TIMESTAMP_TZ, source timezone preserved)."
+        description: "Event timestamp, TIMESTAMP_TZ in UTC."
         data_tests:
           - not_null
 
       - name: link_url_clicked
+        description: "URL clicked. Populated only when event_type = 'clicked'."
+
+      - name: bounce_type
         description: >
-          URL clicked by member. NULL when event_type is not 'clicked'
-          (95.4% of rows). Case-sensitive, preserved as-is.
+          Populated only when event_type = 'bounced'. The ESP added bounce
+          classification in the 2023-09 export; bounced events from earlier
+          files have no classification and are set to 'unknown'.
+          NULL = not a bounce; 'unknown' = bounce with no classification.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['hard', 'soft', 'unknown']
 
       - name: source_file
         description: "Raw COPY INTO source file (audit)."
@@ -639,7 +643,6 @@ models:
 
       - name: loaded_at
         description: "Timestamp when raw row was loaded into Snowflake."
-
 
  # ===========================================================================
 
