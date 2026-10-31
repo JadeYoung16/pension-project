@@ -64,7 +64,7 @@ models:
     # --- Marts layer: business-facing dim/fct (tables) ----------------------
     marts:
       +materialized: table
-
+      +on_schema_change: fail   # incremental: schema 变化时报错, 强制显式 --full-refresh
       oncap:
         +schema: mart_oncap
 
