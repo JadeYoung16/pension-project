@@ -56,7 +56,7 @@ joined as (
 final as (
 
     select
-        -- PK (degenerate, 守 grain; 裸自然键, event_id 已验唯一无需去重)
+        -- PK (degenerate, 守 grain; 裸自然键, 去重在上游 stg_oncap__email_engagement 完成)
         event_id,
 
         -- foreign keys → dimensions
@@ -65,7 +65,8 @@ final as (
 
         -- degenerate dimensions (无独立维度的描述性标识)
         event_type,                 -- sent/delivered/opened/clicked/bounced/unsubscribed
-        campaign_id,                -- 低基数(2 个), 不单建 dim_campaign
+        bounce_type,                -- hard/soft/unknown, bounced only; pre-2023-09 all unknown (see yml)
+        campaign_id,                -- low cardinality (4), no dim_campaign
         campaign_name,              -- 与 campaign_id 成对
         link_url_clicked,           -- 仅 clicked 事件非空
         event_timestamp,            -- event-time, 也作 degenerate dim
