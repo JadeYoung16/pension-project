@@ -425,26 +425,35 @@ models:
 
   - name: fct_portal
     description: >
-      Portal activity fact. Grain: one portal event
-      (login/logout, statement_view, document_download,
-      pension_calculator_use, buyback_info_page_view,
-      buyback_quote_request, beneficiary_page_view). Factless —
-      no additive measure, event counts via count(*) at query layer.
-      Member-centric: no employer FK. SK bound at ETL time via
-      point-in-time join; lower bound relaxed pending snapshot
-      valid_from fix (see tech debt). VARIANT event_properties dropped
-      (vestigial — empty for all event types except login's auth_method,
-      which has no analytical value). referrer / ip_hash dropped
-      (all-NULL / non-analytical). device_type derived from user_agent.
+      Member portal activity fact. Grain: one portal
+      event. Factless: count rows at the query layer.
+
+      Uptime monitor traffic is excluded. Anonymous
+      buyback page visits are kept (member_sk NULL).
+
+      event_date_sk is the Toronto local date.
+      event_timestamp is UTC.
+
+      Member-centric: no employer FK. member_sk is bound
+      by a point-in-time join; the lower bound is relaxed
+      pending the snapshot valid_from fix (see tech debt).
+
+      Not carried from staging: event_properties, referrer,
+      UTM columns, ip_hash. Add them when a consumer needs
+      them.
     columns:
       - name: event_id
-        description: Natural key / PK. Grain guard. Verified unique, no dedup needed.
+        description: >
+          PK. Grain guard. Duplicates can still come from
+          incremental runs or joins.
         data_tests:
           - unique
           - not_null
 
       - name: member_sk
-        description: FK to dim_member (point-in-time). NULL = orphan event.
+        description: >
+          FK to dim_member (point-in-time). NULL is valid
+          only for anonymous buyback page visits.
         data_tests:
           - relationships:
               arguments:
@@ -452,10 +461,13 @@ models:
                 field: member_sk
           - not_null:
               config:
-                severity: warn
+                where: >
+                  event_type <> 'buyback_info_page_view'
 
       - name: event_date_sk
-        description: FK to dim_date (event_timestamp as YYYYMMDD).
+        description: >
+          FK to dim_date. Toronto local date of the event
+          (YYYYMMDD).
         data_tests:
           - relationships:
               arguments:
@@ -464,24 +476,49 @@ models:
           - not_null
 
       - name: event_type
-        description: >
-          8 portal event types. Degenerate dim. page_path maps near-1:1
-          to event_type (kept as raw DD, prefer event_type for analysis).
+        description: "Type of portal interaction."
         data_tests:
           - not_null
           - accepted_values:
               arguments:
-                values: ['portal_login', 'portal_logout', 'statement_view', 'document_download', 'pension_calculator_use', 'buyback_info_page_view', 'buyback_quote_request', 'beneficiary_page_view']
+                values:
+                  - portal_login
+                  - portal_logout
+                  - statement_view
+                  - document_download
+                  - pension_calculator_use
+                  - buyback_info_page_view
+                  - buyback_quote_request
+                  - beneficiary_page_view
 
       - name: session_id
         description: >
-          Portal session identifier. Degenerate dim (no dim_session).
-          Supports session-level behavioral analysis. Verified always populated.
+          Per-request ID, not a visit key. Rebuild visits
+          downstream instead of grouping by this column.
         data_tests:
           - not_null
 
+      - name: page_path
+        description: >
+          URL path. Maps one-to-one to event_type; prefer
+          event_type for analysis.
+
+      - name: event_timestamp
+        description: "Event time in UTC."
+
       - name: device_type
         description: >
-          Derived DD from user_agent (Mobile-iOS / Mobile-Android / Desktop).
-          accepted_values acts as a contract sentinel on the case-when
-          transformation
+          Derived from user_agent. Mobile app traffic is
+          grouped with the browser on the same OS.
+          'Unknown' when user_agent was not captured.
+          Unmapped user agents pass through unchanged, so
+          accepted_values flags them.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - Desktop
+                  - Mobile-iOS
+                  - Mobile-Android
+                  - Unknown
