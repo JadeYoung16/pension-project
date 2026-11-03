@@ -58,9 +58,12 @@ sources:
 
       - name: portal_event
         description: >
-          Member portal click events from JSONL logs (58,537 rows).
-          Note: 1,069 rows excluded due to malformed JSON; TRY_PARSE_JSON
-          recovery is a Week 9 polish item.
+          Member portal events from daily JSONL logs,
+          loaded line by line. Lines that fail JSON
+          parsing are kept in _raw_line with all other
+          columns NULL. Web events carry Toronto local
+          offsets; mobile app events are in UTC.
+          Includes uptime monitor traffic.
 
       - name: salary_history
         description: >

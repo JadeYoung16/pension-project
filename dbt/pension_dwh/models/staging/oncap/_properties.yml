@@ -1026,93 +1026,132 @@ models:
 
   - name: stg_oncap__portal_event
     description: >
-      One row per member portal interaction. Grain: event.
-      Row count: 58,537.
-      
-      Raw layer incompleteness: Day 5 COPY INTO partial-loaded 1,069 rows
-      (1.8%) due to malformed JSON in 5 of 91 source jsonl files. Expected
-      total ~59,606 rows. Week 9 polish: TRY_PARSE_JSON re-ingestion to recover.
-      
-      Schema notes:
-      - event_type values already lowercase (phase-2 generator design)
-      - page_path is 1:1 derivable from event_type (raw artifact)
-      - referrer is 100% NULL (generator gap, Week 9 polish backlog)
-      - user_agent has only 4 unique values (generator simplification)
-      - event_properties is conditional VARIANT — populated for portal_login
-        with auth_method, empty {} for other event types
+      One row per member portal event. Grain: event.
+
+      Rows that failed JSON parsing at load are excluded.
+      These lines were truncated inside event_properties,
+      so that field cannot be recovered. A source test
+      monitors the bad-line ratio per file.
+
+      Timezones: web events arrive in Toronto local time,
+      mobile app events arrive in UTC. Both are converted
+      to UTC here.
+
+      Uptime monitor traffic is flagged, not removed.
+      Filter it downstream with is_uptime_monitor.
     columns:
 
       - name: event_id
-        description: "PK. Format: evt_{17-char alphanumeric}."
+        description: "PK. Unique per event."
         data_tests:
           - unique
           - not_null
 
       - name: member_id
-        description: "FK to stg_oncap__member_census."
+        description: >
+          FK to stg_oncap__member_census. NULL is valid
+          only on buyback_info_page_view: uptime monitor
+          hits and anonymous visits. Enforced by a
+          singular test.
         data_tests:
-          - not_null
           - relationships:
-              to: ref('stg_oncap__member_census')
-              field: member_id
+              arguments:
+                to: ref('stg_oncap__member_census')
+                field: member_id
 
       - name: session_id
         description: >
-          Browser session identifier. Multiple events share a session_id
-          when user stays logged in.
+          Behaves like a per-request ID, not a visit key:
+          most sessions hold one event, and login and
+          logout rarely share a session. Rebuild visits
+          downstream instead of grouping by this column.
         data_tests:
           - not_null
 
       - name: event_timestamp
-        description: "Event timestamp (TIMESTAMP_TZ, source timezone preserved)."
+        description: >
+          Event time converted to UTC (TIMESTAMP_TZ,
+          offset +00:00). Convert to America/Toronto
+          downstream for local dates.
         data_tests:
           - not_null
 
       - name: event_type
-        description: >
-          Type of portal interaction. Already lowercased in raw (phase-2
-          generator). 1:1 mapping to page_path in current generator design.
+        description: "Type of portal interaction."
         data_tests:
           - not_null
           - accepted_values:
-              values:
-                - portal_login
-                - portal_logout
-                - statement_view
-                - pension_calculator_use
-                - buyback_info_page_view
-                - document_download
-                - beneficiary_page_view
-                - buyback_quote_request
+              arguments:
+                values:
+                  - portal_login
+                  - portal_logout
+                  - statement_view
+                  - pension_calculator_use
+                  - buyback_info_page_view
+                  - document_download
+                  - beneficiary_page_view
+                  - buyback_quote_request
 
       - name: page_path
         description: >
-          URL path of the page generating the event. Currently 1:1
-          with event_type (e.g. portal_login → /login). Real web events
-          typically have multi-source pages; this is a generator artifact.
+          URL path of the page. Maps one-to-one to
+          event_type (enforced by a singular test).
         data_tests:
           - not_null
           - accepted_values:
-              values:
-                - /login
-                - /logout
-                - /statements
-                - /calculator
-                - /buyback/info
-                - /documents
-                - /beneficiary
-                - /buyback/quote
+              arguments:
+                values:
+                  - /login
+                  - /logout
+                  - /statements
+                  - /calculator
+                  - /buyback/info
+                  - /documents
+                  - /beneficiary
+                  - /buyback/quote
 
       - name: referrer
         description: >
-          HTTP referrer URL. Currently 100% NULL — generator does not
-          populate. Week 9 polish backlog (limits flow-source analytics).
+          HTTP referrer. Outlook safelinks wrap the
+          original email link here, URL-encoded.
+
+      - name: page_location
+        description: >
+          Full landing URL from event_properties. Only
+          present on buyback pages. Case preserved.
+
+      - name: safelinks_target_url
+        description: >
+          Decoded original link from an Outlook safelinks
+          referrer. NULL when referrer is not safelinks.
+
+      - name: utm_found_in
+        description: >
+          Where the UTM parameters were found. NULL means
+          no UTM in either place: source unknown, not
+          proven organic.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - page_location
+                  - safelinks_referrer
+
+      - name: utm_source
+        description: "UTM source parameter."
+
+      - name: utm_medium
+        description: "UTM medium parameter."
+
+      - name: utm_campaign
+        description: >
+          UTM campaign parameter, lowercased (raw values
+          arrive in mixed case).
 
       - name: ip_hash
         description: >
-          SHA-256 hash of source IP address. Pre-hashed at ingestion
-          for PII protection. 5.1% NULL (~3,000 rows) for session-continuation
-          events where generator omits re-logging.
+          SHA-256 hash of source IP. NULL for mobile app
+          events (the app does not log IP).
         config:
           meta:
             contains_pii: true
@@ -1121,27 +1160,34 @@ models:
 
       - name: user_agent
         description: >
-          Browser/device user-agent string. 3.1% NULL (session continuation).
-          Currently only 4 unique values (generator simplification).
+          Browser or device user agent. 'unknown' when
+          not captured.
+        data_tests:
+          - not_null
         config:
           meta:
             contains_pii: true
             pii_type: technical_identifier
             sensitivity: low
 
+      - name: is_uptime_monitor
+        description: >
+          TRUE for automated uptime monitor hits,
+          identified by user agent.
+        data_tests:
+          - not_null
+
       - name: event_properties
         description: >
-          Semi-structured VARIANT field. Schema varies by event_type:
-          - portal_login: {"auth_method": "password"}
-          - all other event_types: {} (empty object)
-          Downstream marts can flatten with event_properties:auth_method::varchar
-          syntax for portal_login-specific analytics.
+          Raw VARIANT. Keys vary by event type:
+          auth_method on login, page_location on buyback
+          pages.
 
       - name: source_file
-        description: "Raw COPY INTO source file (audit)."
+        description: "Raw source file (audit)."
 
       - name: source_row_num
-        description: "Raw row number in source file (audit)."
+        description: "Row number in source file (audit)."
 
       - name: loaded_at
-        description: "Timestamp when raw row was loaded into Snowflake."
+        description: "Load timestamp (audit)."

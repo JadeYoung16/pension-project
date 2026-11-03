@@ -1,31 +1,78 @@
--- =============================================================================
+-- ======================================================
 -- stg_oncap__portal_event
--- =============================================================================
--- One row per portal interaction event. Grain: event.
--- 58,537 rows.
+-- ======================================================
+-- One row per portal event. Grain: event. PK: event_id.
 --
--- Known raw layer incompleteness:
---   Day 5 COPY INTO from 91 jsonl files partial-loaded due to malformed JSON.
---   Expected ~59,606 rows (Postgres equivalent); 1,069 rows (1.8%) skipped.
---   Week 9 polish: TRY_PARSE_JSON re-ingestion to recover.
+-- - Rows that failed JSON parsing are excluded
+--   (_raw_line is not null). Monitored by a source test.
+-- - event_timestamp converted to UTC: web rows arrive
+--   in Toronto local time, app rows in UTC.
+-- - UTM parsed from page_location, or from the decoded
+--   Outlook safelinks referrer.
+-- - Uptime monitor rows are flagged, not removed.
 --
--- 1:1 mirror of raw with:
---   - preserve event_type as-is (raw already lowercased)
---   - preserve event_properties as VARIANT (downstream flattens per-event-type)
---   - preserve all PII fields (ip_hash already pre-hashed; flagged in yaml)
---   - cast nothing (raw types already correct: VARCHAR/TIMESTAMP_TZ/VARIANT)
---
--- Generator artifacts (Week 9 polish backlog):
---   - referrer is 100% NULL — generator does not populate
---   - user_agent has only 4 unique values — simplified device modeling
---   - page_path is redundant with event_type (1:1 derivable) — kept for fidelity
--- =============================================================================
+-- Full notes in _properties.yml.
+-- ======================================================
 
 with
 
 source as (
 
-    select * from {{ source('raw_oncap', 'portal_event') }}
+    select *
+    from {{ source('raw_oncap', 'portal_event') }}
+    where _raw_line is null
+
+),
+
+parsed as (
+
+    select
+        *,
+        event_properties:page_location::string
+            as page_location,
+        iff(referrer ilike '%safelinks.protection.outlook%',
+            parse_url(referrer):parameters:url::string,
+            null) as safelinks_encoded,
+        coalesce(user_agent ilike '%monitor%', false)
+            as is_uptime_monitor
+    from source
+
+),
+
+decoded as (
+
+    select
+        *,
+        regexp_replace(
+         regexp_replace(
+          regexp_replace(
+           regexp_replace(
+            regexp_replace(safelinks_encoded,
+             '%3A', ':', 1, 0, 'i'),
+            '%2F', '/', 1, 0, 'i'),
+           '%3F', '?', 1, 0, 'i'),
+          '%3D', '=', 1, 0, 'i'),
+         '%26', '&', 1, 0, 'i')
+            as safelinks_target_url
+    from parsed
+
+),
+
+utm as (
+
+    select
+        *,
+        case
+            when page_location ilike '%utm_%'
+                then 'page_location'
+            when safelinks_target_url ilike '%utm_%'
+                then 'safelinks_referrer'
+        end as utm_found_in,
+        parse_url(case utm_found_in
+            when 'page_location' then page_location
+            else safelinks_target_url
+        end):parameters as utm_params
+    from decoded
 
 ),
 
@@ -33,32 +80,43 @@ renamed as (
 
     select
 
-        -- --- identifiers ---------------------------------------------------
+        -- identifiers
         event_id,
-        member_id,                                                   -- FK
-        session_id,                                                  -- session grouping key
+        member_id,
+        session_id,
 
-        -- --- temporal ------------------------------------------------------
-        event_timestamp,                                             -- already TIMESTAMP_TZ
+        -- temporal (UTC)
+        convert_timezone('UTC', event_timestamp)
+            as event_timestamp,
 
-        -- --- event classification (raw already lowercase) ------------------
-        event_type,                                                  -- 8 distinct values
-        page_path,                                                   -- 1:1 with event_type (raw artifact)
-        referrer,                                                    -- 100% NULL currently
+        -- event classification
+        event_type,
+        page_path,
+        referrer,
 
-        -- --- PII: technical fingerprinting (preserved; flagged) ------------
-        ip_hash,                                                     -- already sha256-hashed
-        user_agent,
+        -- traffic source
+        page_location,
+        safelinks_target_url,
+        utm_found_in,
+        utm_params:utm_source::string as utm_source,
+        utm_params:utm_medium::string as utm_medium,
+        lower(utm_params:utm_campaign::string)
+            as utm_campaign,
 
-        -- --- semi-structured properties ------------------------------------
-        event_properties,                                            -- VARIANT, conditional sub-fields
+        -- technical fingerprinting (PII)
+        ip_hash,
+        coalesce(user_agent, 'unknown') as user_agent,
+        is_uptime_monitor,
 
-        -- --- audit pass-through --------------------------------------------
-        _source_file        as source_file,
-        _row_num            as source_row_num,
-        _loaded_at          as loaded_at
+        -- semi-structured
+        event_properties,
 
-    from source
+        -- audit
+        _source_file as source_file,
+        _row_num as source_row_num,
+        _loaded_at as loaded_at
+
+    from utm
 
 )
 
