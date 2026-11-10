@@ -61,6 +61,13 @@ models:
       external:
         +schema: stg_external
 
+    # --- Intermediate layer: reusable building blocks (views) ---
+    intermediate:
+      +materialized: view
+
+      oncap:
+        +schema: int_oncap
+
     # --- Marts layer: business-facing dim/fct (tables) ----------------------
     marts:
       +materialized: table

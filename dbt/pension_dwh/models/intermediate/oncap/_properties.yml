@@ -1,0 +1,31 @@
+version: 2
+
+models:
+  - name: int_buyback_events
+    description: >
+      One row per buyback (bbk_*) life event, tagged with
+      the application it belongs to. Each bbk_app opens a
+      new application; later events of the same member
+      belong to it until the next bbk_app, ordered by
+      event_timestamp (entry time). Cancelled applications
+      are kept, not deduplicated: which application counts
+      is a mart decision.
+    columns:
+      - name: event_id
+        tests:
+          - unique
+          - not_null
+      - name: application_id
+        description: >
+          event_id of the bbk_app that opened this
+          application. Stable key for one application.
+        tests:
+          - not_null
+      - name: application_seq
+        description: >
+          1 = member's first application, 2 = second.
+          For readability only; it can shift if an earlier
+          application is back-filled. Join on
+          application_id, not on seq.
+        tests:
+          - not_null
