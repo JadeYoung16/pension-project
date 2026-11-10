@@ -648,16 +648,110 @@ models:
 
   - name: stg_oncap__life_event
     description: >
-      One row per member life event. Grain: event.  Row count: 17,638.
-      
-      Wide event table: different event_type_code values populate
-      different column subsets:
-      - Buyback events (80%): use buyback_category_code, costs,
-        payment_method, etc.
-      - Non-buyback events (ADDR_CHG, BENE_UPD, MARITAL — 20%):
-        buyback columns are NULL by design.
-      
-      Conditional NULL semantics are documented per-column.
+      One row per member life event. Grain: event. 16,699 rows from
+      24 monthly files (2022-02 to 2024-01).
+
+      Wide event table: buyback events (bbk_*, 12,979 rows) populate
+      the buyback columns; addr_chg / bene_upd / marital (3,720 rows)
+      leave them NULL by design.
+
+      Application attributes (category, years, window flags,
+      payment terms) are copied onto every event of the application.
+      Costs depend on the event type:
+      - application-stage events (bbk_app, bbk_quote, bbk_approved,
+        bbk_cancelled, bbk_complete): cost of the whole application
+      - bbk_installment_pay: a single member payment, equal to the
+        member share / installment_months (rounded to the cent);
+        employer_cost = 0
+      Never sum costs across events of different types.
+
+      A member can have more than one application: 37 members
+      cancelled and resubmitted. Applications are identified
+      downstream (intermediate), not here.
+
+    data_tests:
+      - dbt_utils.expression_is_true:
+          name: life_event_total_cost_is_sum
+          arguments:
+            expression: "total_cost = member_cost + employer_cost"
+          config:
+            where: "event_type_code like 'bbk%'"
+
+      - dbt_utils.expression_is_true:
+          name: life_event_within_window_cost_shared_equally
+          arguments:
+            expression: "member_cost = employer_cost"
+          config:
+            where: >
+              event_type_code like 'bbk%'
+              and event_type_code <> 'bbk_installment_pay'
+              and is_within_window
+
+      - dbt_utils.expression_is_true:
+          name: life_event_installment_pay_member_only
+          arguments:
+            expression: "employer_cost = 0"
+          config:
+            where: "event_type_code = 'bbk_installment_pay'"
+
+      - dbt_utils.expression_is_true:
+          name: life_event_open_option_employer_pays_nothing
+          arguments:
+            expression: "employer_cost = 0"
+          config:
+            where: "event_type_code like 'bbk%' and is_open_option"
+
+      - dbt_utils.expression_is_true:
+          name: life_event_window_flags_exclusive
+          arguments:
+            expression: "is_within_window <> is_open_option"
+          config:
+            where: "event_type_code like 'bbk%'"
+
+      - dbt_utils.expression_is_true:
+          name: life_event_installment_months_iff_not_lump_sum
+          arguments:
+            expression: >
+              (installment_months is null)
+              = (payment_method = 'lump_sum')
+          config:
+            where: "event_type_code like 'bbk%'"
+
+      - dbt_utils.expression_is_true:
+          name: life_event_rejected_has_notes
+          arguments:
+            expression: "notes is not null"
+          config:
+            where: "event_status = 'rejected'"
+            severity: warn
+
+      - dbt_utils.expression_is_true:
+          name: life_event_missing_leave_end_only_in_leave_categories
+          arguments:
+            expression: >
+              leave_end_date is not null
+              or buyback_category_code in ('loa', 'ml', 'pst')
+          config:
+            where: "event_type_code like 'bbk%'"
+            severity: warn
+
+      - dbt_utils.expression_is_true:
+          name: life_event_entered_on_or_after_event_date
+          arguments:
+            expression: >
+              convert_timezone('America/Toronto', event_timestamp)::date
+              >= event_date
+
+      - dbt_utils.expression_is_true:
+          name: life_event_non_mail_entered_same_day
+          arguments:
+            expression: >
+              convert_timezone('America/Toronto', event_timestamp)::date
+              = event_date
+          config:
+            where: "channel_code <> 'mail'"
+            severity: warn
+
     columns:
 
       - name: event_id
@@ -671,70 +765,106 @@ models:
         data_tests:
           - not_null
           - relationships:
-              to: ref('stg_oncap__member_census')
-              field: member_id
+              arguments:
+                to: ref('stg_oncap__member_census')
+                field: member_id
 
       - name: employer_id
         description: "FK to stg_oncap__employer_registry."
         data_tests:
           - not_null
           - relationships:
-              to: ref('stg_oncap__employer_registry')
-              field: employer_id
+              arguments:
+                to: ref('stg_oncap__employer_registry')
+                field: employer_id
 
       - name: event_date
-        description: "Date the event occurred."
+        description: >
+          Business date of the event (Toronto local date, no time).
+          For mail buyback applications this appears to be the date
+          received; entry follows 7-21 days later (see
+          event_timestamp). Meaning inferred from data, not yet
+          confirmed with the business. Compare with event_timestamp
+          only after converting it to a Toronto date.
         data_tests:
           - not_null
 
       - name: event_timestamp
-        description: "Event timestamp (TIMESTAMP_TZ, source timezone preserved)."
+        description: >
+          When the event was entered, in UTC (TIMESTAMP_TZ, +00:00),
+          same as stg_oncap__portal_event. Source labels Toronto
+          wall-clock time as -05:00 all year (about 10% of rows
+          restate it as +00:00), so DST rows arrive 1 hour late;
+          corrected here. For business dates, convert to
+          America/Toronto first. 6 batch rows on 2023-03-12 (DST
+          start) were stamped 02:00, a local time that does not
+          exist; they show as 03:00 local, the same instant as the
+          source.
+        data_tests:
+          - not_null
 
       - name: event_type_code
         description: >
           Type of life event (lowercased from raw UPPERCASE).
-          BBK_* are buyback-flow stages; ADDR_CHG/BENE_UPD/MARITAL
-          are non-buyback events.
+          bbk_* are buyback-flow stages; addr_chg / bene_upd /
+          marital are non-buyback events. bbk_approved holds the
+          review decision and includes 69 rejected rows (see
+          event_status): counting bbk_approved events overstates
+          approvals.
         data_tests:
           - not_null
           - accepted_values:
-              values:
-                - addr_chg
-                - bbk_app
-                - bbk_approved
-                - bbk_cancelled
-                - bbk_complete
-                - bbk_installment_pay
-                - bbk_quote
-                - bene_upd
-                - marital
+              arguments:
+                values:
+                  - addr_chg
+                  - bbk_app
+                  - bbk_approved
+                  - bbk_cancelled
+                  - bbk_complete
+                  - bbk_installment_pay
+                  - bbk_quote
+                  - bene_upd
+                  - marital
 
       - name: event_status
-        description: "Current event status (lowercased from raw UPPERCASE)."
+        description: >
+          Event status (lowercased from raw UPPERCASE). Every event
+          type has a single status except bbk_approved, which is
+          approved or rejected.
         data_tests:
           - not_null
           - accepted_values:
-              values: ['approved', 'cancelled', 'completed', 'quoted', 'rejected', 'submitted']
+              arguments:
+                values:
+                  - approved
+                  - cancelled
+                  - completed
+                  - quoted
+                  - rejected
+                  - submitted
 
       - name: channel_code
         description: >
           How the event was initiated (lowercased from raw UPPERCASE).
-          ADVISOR (rep-initiated), MAIL (paper form), PHONE (call center),
-          PORTAL (self-service), SYSTEM (automated).
+          advisor (rep-initiated), mail (paper form), phone (call
+          center), portal (self-service), system (automated). Mail
+          buyback applications are entered 7-21 days after receipt.
         data_tests:
           - not_null
           - accepted_values:
-              values: ['advisor', 'mail', 'phone', 'portal', 'system']
+              arguments:
+                values: ['advisor', 'mail', 'phone', 'portal', 'system']
 
       - name: buyback_category_code
         description: >
           Buyback service category (lowercased from raw UPPERCASE).
-          Values: loa (leave of absence), ml (maternity leave),
-          pep (prior eligible period), pst (prior service transfer),
-          ptt (part-time). NULL for non-buyback events.
+          loa (leave of absence), ml (maternity leave), pep (prior
+          eligible period), pst (prior service transfer), ptt
+          (part-time). NULL for non-buyback events.
         data_tests:
           - accepted_values:
-              values: ['loa', 'ml', 'pep', 'pst', 'ptt']
+              arguments:
+                values: ['loa', 'ml', 'pep', 'pst', 'ptt']
 
       - name: buyback_service_years
         description: >
@@ -743,63 +873,75 @@ models:
 
       - name: leave_end_date
         description: >
-          End date of leave period for buyback calculations.
-          NULL for non-buyback events.
+          End date of the leave period. NULL for non-buyback events.
+          Also NULL on 8 applications (74 events), all loa / ml / pst
+          within the window; whether the leave was open-ended or the
+          value is missing is not confirmed.
 
       - name: months_since_eligibility
         description: >
-          Months elapsed since member became eligible to buy back the
-          leave period. Used for window/option determination.
-          NULL for non-buyback events.
+          Months elapsed since the member became eligible to buy back
+          the period. NULL for non-buyback events.
 
       - name: is_within_window
         description: >
-          Y if buyback request is within the time window for standard
-          processing. N if outside (requires extra approval).
-          NULL for non-buyback events. Preserved as Y/N.
-        data_tests:
-          - accepted_values:
-              values: ['Y', 'N']
+          TRUE if bought within the window: the employer shares the
+          cost equally (member_cost = employer_cost). FALSE: the
+          member pays the full cost. Exactly one of is_within_window /
+          is_open_option is TRUE on buyback events. NULL for
+          non-buyback events. Cast from raw Y/N.
 
       - name: is_open_option
         description: >
-          Y if member has an open buyback option pending decision.
-          NULL for non-buyback events. Preserved as Y/N.
-        data_tests:
-          - accepted_values:
-              values: ['Y', 'N']
+          TRUE if bought outside the window (open option): the member
+          pays the full cost and employer_cost = 0. Always the
+          opposite of is_within_window on buyback events. NULL for
+          non-buyback events. Cast from raw Y/N.
 
       - name: member_cost
         description: >
-          Member's portion of buyback cost in CAD.
-          NULL for non-buyback events.
+          Member's share in CAD. On application-stage events: the
+          member share of the whole application. On
+          bbk_installment_pay: one monthly payment (member share /
+          installment_months, rounded). NULL for non-buyback events.
 
       - name: employer_cost
         description: >
-          Employer's portion of buyback cost in CAD.
-          NULL for non-buyback events.
+          Employer's share in CAD. On application-stage events: equal
+          to member_cost within the window, 0 under the open option.
+          Always 0 on bbk_installment_pay (installments cover the
+          member share only; how the employer share is paid is not
+          recorded here). NULL for non-buyback events.
 
       - name: total_cost
         description: >
-          Total buyback cost in CAD (= member_cost + employer_cost in raw).
-          NULL for non-buyback events. Sum invariant deferred to
-          singular test in Week 9 polish.
+          member_cost + employer_cost, in CAD. Whole-application cost
+          on application-stage events, a single payment on
+          bbk_installment_pay. NULL for non-buyback events.
 
       - name: payment_method
         description: >
-          How member pays the buyback (lowercased from raw UPPERCASE).
-          NULL for non-buyback events or when not yet decided.
+          How the member pays (lowercased from raw UPPERCASE).
+          Populated on every buyback event; NULL for non-buyback
+          events.
         data_tests:
           - accepted_values:
-              values: ['installment', 'lump_sum']
+              arguments:
+                values: ['installment', 'lump_sum']
 
       - name: installment_months
         description: >
-          Number of installment months for INSTALLMENT payment_method.
-          NULL for LUMP_SUM payments and non-buyback events.
+          Number of monthly installments (12-123). NULL exactly when
+          payment_method = lump_sum, and for non-buyback events.
 
       - name: notes
-        description: "Free-text notes from the event recorder. Display-bound, preserved."
+        description: >
+          Free text. Mostly system templates (installment progress,
+          cancellation, rejection reason), but about 5% of rows
+          replace the template with hand-typed text such as '????' or
+          'n/a'. Do not parse installment numbers from notes. Rejected
+          bbk_approved rows carry the rejection reason. Preserved
+          as is.
 
       - name: source_file
         description: "Raw COPY INTO source file (audit)."

@@ -47,8 +47,8 @@ pivoted as (
         max(buyback_service_years)   as buyback_service_years,
         max(payment_method)          as payment_method,
         max(installment_months)      as installment_months,
-        max(is_within_window)        as is_within_window,
-        max(is_open_option)          as is_open_option,
+        boolor_agg(is_within_window) as is_within_window,  -- any true
+        boolor_agg(is_open_option)   as is_open_option,    -- any true
         max(total_cost)              as total_cost
 
     from buyback_events
