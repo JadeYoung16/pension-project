@@ -29,3 +29,128 @@ models:
           application_id, not on seq.
         tests:
           - not_null
+
+  - name: int_buyback_applications
+    description: >
+      One row per buyback application. Attributes come from
+      the bbk_app row. Milestone dates are event_date
+      (receipt date for paper apps); app_entered_at is the
+      entry timestamp. bbk_approved is split into
+      approved_date / rejected_date. outcome = furthest step
+      reached; apps still in progress at data cutoff stay
+      'applied' / 'quoted' / 'approved'.
+    columns:
+      - name: application_id
+        data_tests:
+          - unique
+          - not_null
+      - name: member_id
+        data_tests:
+          - not_null
+      - name: app_date
+        data_tests:
+          - not_null
+      - name: channel_code
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['mail', 'portal']
+      - name: outcome
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['completed', 'rejected',
+                         'cancelled', 'approved',
+                         'quoted', 'applied']
+    data_tests:
+      # structure (error)
+      - dbt_utils.expression_is_true:
+          name: int_bbk_apps_approved_xor_rejected
+          arguments:
+            expression: >
+              approved_date is null
+              or rejected_date is null
+      - dbt_utils.expression_is_true:
+          name: int_bbk_apps_outcome_completed
+          arguments:
+            expression: >
+              (outcome = 'completed')
+              = (completed_date is not null)
+      - dbt_utils.expression_is_true:
+          name: int_bbk_apps_outcome_rejected
+          arguments:
+            expression: >
+              (outcome = 'rejected')
+              = (rejected_date is not null)
+      - dbt_utils.expression_is_true:
+          name: int_bbk_apps_outcome_cancelled
+          arguments:
+            expression: >
+              (outcome = 'cancelled')
+              = (cancelled_date is not null)
+      - dbt_utils.expression_is_true:
+          name: int_bbk_apps_outcome_approved
+          arguments:
+            expression: >
+              (outcome = 'approved')
+              = (approved_date is not null
+                 and completed_date is null)
+      - dbt_utils.expression_is_true:
+          name: int_bbk_apps_outcome_quoted
+          arguments:
+            expression: >
+              (outcome = 'quoted')
+              = (quote_date is not null
+                 and approved_date is null
+                 and rejected_date is null)
+      - dbt_utils.expression_is_true:
+          name: int_bbk_apps_outcome_applied
+          arguments:
+            expression: >
+              (outcome = 'applied')
+              = (quote_date is null
+                 and cancelled_date is null)
+      # flow (warn)
+      - dbt_utils.expression_is_true:
+          name: int_bbk_apps_quote_after_app
+          arguments:
+            expression: >
+              quote_date is null
+              or quote_date >= app_date
+          config:
+            severity: warn
+      - dbt_utils.expression_is_true:
+          name: int_bbk_apps_approved_after_quote
+          arguments:
+            expression: >
+              approved_date is null
+              or (quote_date is not null
+                  and approved_date >= quote_date)
+          config:
+            severity: warn
+      - dbt_utils.expression_is_true:
+          name: int_bbk_apps_rejected_after_quote
+          arguments:
+            expression: >
+              rejected_date is null
+              or (quote_date is not null
+                  and rejected_date >= quote_date)
+          config:
+            severity: warn
+      - dbt_utils.expression_is_true:
+          name: int_bbk_apps_completed_after_approved
+          arguments:
+            expression: >
+              completed_date is null
+              or (approved_date is not null
+                  and completed_date >= approved_date)
+          config:
+            severity: warn
+      - dbt_utils.expression_is_true:
+          name: int_bbk_apps_cancelled_before_quote
+          arguments:
+            expression: >
+              cancelled_date is null
+              or quote_date is null
+          config:
+            severity: warn
