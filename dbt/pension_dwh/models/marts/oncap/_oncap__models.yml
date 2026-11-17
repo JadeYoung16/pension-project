@@ -2,7 +2,19 @@ version: 2
 
 models:
   - name: dim_member
-    description: "SCD Type 2 member dimension. One row per member per validity window."
+    description: >
+      SCD Type 2 member dimension. One row per
+      member per validity window. Validity uses
+      business dates, not snapshot run time: the
+      first version starts 1900-01-01 so facts
+      older than the first census can join; later
+      versions start on their census date.
+      valid_to = next version's valid_from.
+      Attributes reflect census_as_of_date, not
+      the fact's event date. Raw census files
+      20231231 and 20240131 disagree on immutable
+      fields (dob ~100% differ), so only the
+      latest file is used.
 
     columns:
       - name: member_sk
@@ -76,9 +88,39 @@ models:
               arguments:
                 values: ['Entry', 'Mid', 'Senior', 'Executive']
 
-      - name: valid_from
+      - name: census_as_of_date
+        description: >
+          Census file date the attributes come
+          from, parsed from _source_file.
         data_tests:
           - not_null
+
+      - name: valid_from
+        description: >
+          Business-date start. 1900-01-01 for a
+          member's first version.
+        data_tests:
+          - not_null
+
+      - name: valid_to
+        description: >
+          Next version's valid_from. NULL =
+          current version.
+          
+    data_tests:
+      - dbt_utils.expression_is_true:
+          name: dim_member_valid_window_order
+          arguments:
+            expression: >
+              valid_to is null
+              or valid_to > valid_from
+      - dbt_utils.unique_combination_of_columns:
+          name: dim_member_one_version_start
+          arguments:
+            combination_of_columns:
+              - member_id
+              - employer_id
+              - valid_from
 
   - name: dim_salary_history
     description: >

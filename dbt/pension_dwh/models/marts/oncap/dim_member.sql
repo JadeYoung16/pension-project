@@ -4,24 +4,63 @@ with snapshot_source as (
 
 ),
 
+versioned as (
+
+    -- dbt_valid_from is the snapshot run time, not
+    -- when the attributes became true. Derive business
+    -- dates from the census file instead.
+    select
+        *,
+        to_date(
+            regexp_substr(
+                _source_file,
+                '_([0-9]{8})[.]csv$',
+                1, 1, 'e', 1
+            ),
+            'YYYYMMDD'
+        ) as census_as_of_date,
+        row_number() over (
+            partition by member_id, employer_id
+            order by dbt_valid_from
+        ) as version_seq
+    from snapshot_source
+
+),
+
+business_dated as (
+
+    -- First version is open back to 1900 so facts
+    -- older than the first census can still join.
+    -- Later versions start on their census date.
+    select
+        *,
+        iff(
+            version_seq = 1,
+            '1900-01-01'::timestamp_ntz,
+            census_as_of_date::timestamp_ntz
+        ) as business_valid_from
+    from versioned
+
+),
+
 renamed as (
 
     select
-        -- surrogate key (代理键,fact 表 join 用)
+        -- surrogate key (used by fact joins)
         dbt_scd_id as member_sk,
 
-        -- natural key 
+        -- natural key
         member_id,
         employer_id,
 
-        -- PII 
+        -- PII
         first_name,
         last_name,
         dob,
         email,
         postal_code,
 
-        -- code + label 
+        -- code + label
         status_code,
         case status_code
             when 'A' then 'Active'
@@ -31,7 +70,7 @@ renamed as (
             when 'S' then 'Survivor'
         end as status,
 
-        -- code + label 
+        -- code + label
         sex_code,
         case sex_code
             when '1' then 'Male'
@@ -39,7 +78,7 @@ renamed as (
             when '9' then 'Not stated'
         end as sex,
 
-        -- code + label 双留(marital_status)
+        -- code + label
         marital_status_code,
         case marital_status_code
             when 'S' then 'Single'
@@ -49,7 +88,7 @@ renamed as (
             when 'U' then 'Unknown'
         end as marital_status,
 
-        -- code + label 
+        -- code + label
         salary_band_code,
         case salary_band_code
             when 'EN' then 'Entry'
@@ -62,11 +101,18 @@ renamed as (
         enrollment_date,
         termination_date,
 
-        -- SCD2 有效期(snapshot 自动列改名)
-        dbt_valid_from as valid_from,
-        dbt_valid_to as valid_to
+        -- attributes reflect this census date,
+        -- not the fact's event date
+        census_as_of_date,
 
-    from snapshot_source
+        -- SCD2 validity on business dates
+        business_valid_from as valid_from,
+        lead(business_valid_from) over (
+            partition by member_id, employer_id
+            order by dbt_valid_from
+        ) as valid_to
+
+    from business_dated
 
 )
 
