@@ -558,20 +558,30 @@ deliverables rather than design-time inputs. Deferred until then.
   not in Week 5/6 scope.
 
 
-  ### Tech debt: SCD2 snapshot valid_from semantics
-- **Issue:** Snapshots use `check` strategy → `dbt_valid_from` = snapshot
-  run timestamp (2026-06), not business-effective date. All historical
-  facts (2023-24) predate it, so a strict point-in-time join
-  (`event_date >= valid_from`) matches zero rows.
-- **Current mitigation:** All dims are single-version (no change captured
-  yet), so fct range joins relax the lower bound and use `< valid_to`
-  only. Correct under single-version; equals "join current version".
-- **When this breaks:** First time a dim attribute changes and a second
-  version appears, `< valid_to` alone matches multiple versions → fct row
-  fan-out. Must restore `event_date >= valid_from`.
-- **Proper fix (Week 8+):** Switch snapshot to `timestamp` strategy keyed
-  on a business-effective date column, OR backfill valid_from from source
-  history. Deferred — no multi-version data exists to justify the rework.
+ ### Resolved: SCD2 snapshot valid_from semantics
+- **Issue:** Snapshots use `check` strategy, so
+  `dbt_valid_from` = snapshot run timestamp, not a
+  business-effective date. All historical facts
+  (2022-24) predate it, so a strict point-in-time
+  join (`event_date >= valid_from`) matched zero
+  rows. Fct joins had relaxed the lower bound and
+  used `< valid_to` only.
+- **Fix (2026-11):** dim_member and dim_employer
+  derive validity from business dates instead of
+  `dbt_valid_from`:
+  - first version: `valid_from` = 1900-01-01, so
+    facts older than the first source file join
+  - later versions: `valid_from` = source file
+    date parsed from `_source_file`
+  - `valid_to` = next version's `valid_from`
+  - `census_as_of_date` / `registry_as_of_date`
+    show which file the attributes come from
+- Both snapshots read only the latest raw file.
+- fct_email, fct_portal, fct_transaction restored
+  the `>= valid_from` lower bound. Full refresh
+  gave identical row counts and `hash_agg(*)`.
+- **Known limit:** attributes before the first
+  file date are assumed equal to that file.
 
 ### fct_buyback (accumulating snapshot)
 - **Grain:** one buyback process per member. member_id is grain key
