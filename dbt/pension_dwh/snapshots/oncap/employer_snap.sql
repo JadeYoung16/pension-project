@@ -13,6 +13,22 @@
     )
 }}
 
+with source as (
+
+    select * from {{ source('raw_oncap', 'employer_registry') }}
+
+),
+
+latest_snapshot as (
+
+    select *
+    from source
+    where _source_file = (
+        select max(_source_file) from source
+    )
+
+)
+
 select
     employer_id,
     business_number,
@@ -35,6 +51,6 @@ select
     _source_file,
     _row_num,
     _loaded_at
-from {{ source('raw_oncap', 'employer_registry') }}
+from latest_snapshot
 
 {% endsnapshot %}
