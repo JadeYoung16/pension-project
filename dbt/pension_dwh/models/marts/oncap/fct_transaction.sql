@@ -62,10 +62,12 @@ joined as (
 
     left join {{ ref('dim_member') }} m
         on d.member_id = m.member_id  -- noqa: LT02
+        and d.pay_period_end >= m.valid_from
         and d.pay_period_end < coalesce(m.valid_to, '9999-12-31')  -- noqa: LT02
 
     left join {{ ref('dim_employer') }} e
         on d.employer_id = e.employer_id    -- noqa: LT02
+        and d.pay_period_end >= e.valid_from
         and d.pay_period_end < coalesce(e.valid_to, '9999-12-31')  -- noqa: LT02
 ),
 

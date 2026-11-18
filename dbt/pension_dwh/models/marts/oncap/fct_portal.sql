@@ -34,11 +34,6 @@ source as (
 ),
 
 -- Point-in-time join to dim_member.
--- Tech debt: snapshot valid_from is load time (2026),
--- later than all events (2023-24). All members have a
--- single version today, so only valid_to is checked.
--- Restore the valid_from lower bound once multiple
--- versions exist (see _marts_design.md).
 joined as (
 
     select
@@ -49,6 +44,7 @@ joined as (
 
     left join {{ ref('dim_member') }} m
         on s.member_id = m.member_id  -- noqa: LT02
+        and s.event_timestamp >= m.valid_from
         and s.event_timestamp < coalesce(m.valid_to, '9999-12-31')  -- noqa: LT02
 
 ),

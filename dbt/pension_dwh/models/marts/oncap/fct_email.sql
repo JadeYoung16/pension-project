@@ -31,10 +31,6 @@ source as (
 -- ============================================================
 -- joined: point-in-time join 单个 SCD2 维度 (dim_member)
 -- email 是 member 中心, 无 employer 关联, 故只 join dim_member。
--- ⚠️ 技术债: 同 fct_transaction —— snapshot check 策略致 valid_from = 系统时间(2026),
---    早于所有事件日期(2023-24)。当前维度均单版本(valid_to 全 NULL), 放宽下界,
---    仅用 valid_to 判定。多版本出现时须恢复 `event_timestamp >= valid_from` 下界
---    (见 _marts_design.md 技术债条目)。
 -- ============================================================
 joined as (
 
@@ -46,6 +42,7 @@ joined as (
 
     left join {{ ref('dim_member') }} m
         on s.member_id = m.member_id  -- noqa: LT02
+        and s.event_timestamp >= m.valid_from
         and s.event_timestamp < coalesce(m.valid_to, '9999-12-31')  -- noqa: LT02
 
 ),
@@ -70,7 +67,7 @@ final as (
         campaign_name,              -- 与 campaign_id 成对
         link_url_clicked,           -- 仅 clicked 事件非空
         event_timestamp,            -- event-time, 也作 degenerate dim
-
+    
         -- audit / lineage
         source_file,
         source_row_num
