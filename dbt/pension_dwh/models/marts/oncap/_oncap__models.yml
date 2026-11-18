@@ -106,7 +106,7 @@ models:
         description: >
           Next version's valid_from. NULL =
           current version.
-          
+
     data_tests:
       - dbt_utils.expression_is_true:
           name: dim_member_valid_window_order
@@ -181,7 +181,17 @@ models:
 
 
   - name: dim_employer
-    description: "SCD Type 2 employer dimension. One row per employer per validity window."
+    description: >
+      SCD Type 2 employer dimension. One row per
+      employer per validity window. Validity uses
+      business dates, not snapshot run time: the
+      first version starts 1900-01-01 so facts
+      older than the first registry file can
+      join; later versions start on their file
+      date. valid_to = next version's valid_from.
+      Attributes reflect registry_as_of_date, not
+      the fact's event date. Only the latest raw
+      registry file is used (one file, 20240131).
 
     columns:
       - name: employer_sk
@@ -242,9 +252,38 @@ models:
               arguments:
                 values: ['t3010_outbound_list', 'referral_existing_employer', 'conference', 'broker', 'inbound_web', 'chamber_of_commerce']
 
-      - name: valid_from
+      - name: registry_as_of_date
+        description: >
+          Registry file date the attributes come
+          from, parsed from _source_file.
         data_tests:
           - not_null
+
+      - name: valid_from
+        description: >
+          Business-date start. 1900-01-01 for an
+          employer's first version.
+        data_tests:
+          - not_null
+
+      - name: valid_to
+        description: >
+          Next version's valid_from. NULL =
+          current version.
+  
+    data_tests:
+          - dbt_utils.expression_is_true:
+              name: dim_employer_valid_window_order
+              arguments:
+                expression: >
+                  valid_to is null
+                  or valid_to > valid_from
+          - dbt_utils.unique_combination_of_columns:
+              name: dim_employer_one_version_start
+              arguments:
+                combination_of_columns:
+                  - employer_id
+                  - valid_from
 
   - name: dim_charity
     description: >
