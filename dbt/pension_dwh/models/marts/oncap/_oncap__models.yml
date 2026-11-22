@@ -397,59 +397,133 @@ models:
   
   - name: fct_buyback
     description: >
-      Buyback funnel accumulating snapshot. Grain: one buyback process per
-      member (member_id unique; assumes one buyback per member — business
-      allows multiple, future needs a buyback-instance id). Pivots bbk_*
-      life events into one row with milestone date columns. quote/app dates
-      aligned to logical order (least/greatest); members who applied without
-      a prior quote keep quote_date NULL. SK bound at quote_date (or app_date
-      fallback) via point-in-time join. Materialized as table (static data;
-      production accumulating snapshot would use incremental + merge).
+      Buyback application fact. Grain: one row per application
+      (PK application_id), same as int_buyback_applications.
+      Adds point-in-time member / employer SKs bound at app_date,
+      app_date_sk, lag measures, furthest_stage, and installment
+      payment progress. Experiment-specific rules (e.g. a cancelled
+      then resubmitted application counts as outside the window)
+      belong in the experiment mart, not here.
+    data_tests:
+      - dbt_utils.equal_rowcount:
+          name: fct_buyback_rowcount_matches_int
+          arguments:
+            compare_model: ref('int_buyback_applications')
+      - dbt_utils.expression_is_true:
+          name: fct_buyback_lags_non_negative
+          arguments:
+            expression: >
+              coalesce(days_app_to_quote, 0) >= 0
+              and coalesce(days_quote_to_approved, 0) >= 0
+              and coalesce(days_quote_to_rejected, 0) >= 0
+              and coalesce(days_app_to_completed, 0) >= 0
+      - dbt_utils.expression_is_true:
+          name: fct_buyback_outcome_stage_consistent
+          arguments:
+            expression: >
+              case outcome
+                when 'completed' then furthest_stage = 'completed'
+                when 'approved'  then furthest_stage = 'approved'
+                when 'rejected'  then furthest_stage = 'quoted'
+                when 'quoted'    then furthest_stage = 'quoted'
+                when 'applied'   then furthest_stage = 'applied'
+                when 'cancelled' then furthest_stage
+                  in ('applied', 'quoted', 'approved')
+              end
+      - dbt_utils.expression_is_true:
+          name: fct_buyback_installments_null_rule
+          arguments:
+            expression: >
+              (installments_paid is null)
+              = (installment_months is null)
+      - dbt_utils.expression_is_true:
+          name: fct_buyback_last_payment_null_rule
+          arguments:
+            expression: >
+              (last_payment_date is null)
+              = (coalesce(installments_paid, 0) = 0)
+      - dbt_utils.expression_is_true:
+          name: fct_buyback_installments_within_plan
+          arguments:
+            expression: installments_paid <= installment_months
+          config:
+            severity: warn
+      - dbt_utils.expression_is_true:
+          name: fct_buyback_payment_after_approval
+          arguments:
+            expression: last_payment_date >= approved_date
+          config:
+            severity: warn
     columns:
-      - name: member_id
-        description: Grain key / PK. One buyback process per member.
+      - name: application_id
+        description: PK. event_id of the application's bbk_app event.
         data_tests:
           - unique
           - not_null
 
       - name: member_sk
-        description: FK to dim_member (point-in-time on quote/app date).
+        description: >
+          FK to dim_member, version valid on app_date
+          (matched on member_id + employer_id).
         data_tests:
+          - not_null
           - relationships:
               arguments:
                 to: ref('dim_member')
                 field: member_sk
-          - not_null
 
       - name: employer_sk
-        description: FK to dim_employer (point-in-time).
+        description: FK to dim_employer, version valid on app_date.
         data_tests:
+          - not_null
           - relationships:
               arguments:
                 to: ref('dim_employer')
                 field: employer_sk
+
+      - name: app_date_sk
+        description: FK to dim_date (YYYYMMDD) for app_date.
+        data_tests:
           - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_sk
 
       - name: outcome
-        description: Funnel terminal state.
+        description: >
+          Passed through from int_buyback_applications (tested
+          there). Note: 'approved' means approved with installment
+          payments in progress, not stalled after approval.
+
+      - name: furthest_stage
+        description: >
+          Furthest step on the main path
+          (applied -> quoted -> approved -> completed).
+          Rejected and cancelled do not move it; read with outcome.
         data_tests:
+          - not_null
           - accepted_values:
-               arguments:  
-                  values: ['completed', 'approved_not_completed', 'applied_not_approved', 'cancelled', 'quoted_only']
-
-      - name: total_cost
-        description: Buyback total cost (CAD).
-        data_tests:
-          - dbt_utils.accepted_range:
               arguments:
-                 min_value: 0
+                values: ['applied', 'quoted', 'approved', 'completed']
 
-      - name: buyback_service_years
-        description: Years of service being bought back.
-        data_tests:
-          - dbt_utils.accepted_range:
-              arguments:
-                min_value: 0
+      - name: days_app_to_completed
+        description: >
+          Days from app_date to completed_date. Driven by payment
+          method: lump sum completes 1 day after approval; within
+          the data window only 12-month installment plans can
+          complete. Analyse by payment_method and installment_months.
+
+      - name: installments_paid
+        description: >
+          Count of bbk_installment_pay events. Null for lump sum
+          (not applicable); 0 for installment plans with no
+          payment yet.
+
+      - name: last_payment_date
+        description: >
+          Latest installment payment date. Null when no payment.
+          Consumers decide when a gap counts as stalled.
 
   - name: fct_email
     description: >
