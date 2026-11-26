@@ -91,3 +91,10 @@ seeds:
       +column_types:
         sector_category_code: integer
         sector_category_label: varchar
+
+vars:
+  # Email bot detection: an open / click this
+  # many seconds or less after the prior
+  # delivery is treated as machine-generated.
+  bot_open_threshold_seconds: 60
+  bot_click_threshold_seconds: 60

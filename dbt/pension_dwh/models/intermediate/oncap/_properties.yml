@@ -154,3 +154,82 @@ models:
               or quote_date is null
           config:
             severity: warn
+
+  - name: int_email_events
+    description: >
+      One row per email event (all types). PK =
+      event_id; row count = staging. Adds bot
+      detection for opened / clicked: gap from the
+      prior delivery (same member and campaign) is
+      below a threshold (vars
+      bot_open_threshold_seconds,
+      bot_click_threshold_seconds). Prior delivery,
+      not first: campaigns send repeatedly. No
+      message id, so an open of an older message
+      right after a new delivery can be misflagged
+      (rare). Other event types get NULL.
+      Timestamps stay UTC; event_date_local is the
+      Toronto date.
+    data_tests:
+      - dbt_utils.equal_rowcount:
+          arguments:
+            compare_model: >-
+              ref('stg_oncap__email_engagement')
+      - dbt_utils.expression_is_true:
+          name: int_email_events_non_open_click_null
+          arguments:
+            expression: >
+              event_type in ('opened', 'clicked')
+              or (last_delivered_at is null
+              and seconds_since_delivered is null
+              and is_suspected_bot is null)
+      - dbt_utils.expression_is_true:
+          name: int_email_events_delivery_before_event
+          arguments:
+            expression: >
+              last_delivered_at is null
+              or last_delivered_at <= event_timestamp
+      - dbt_utils.expression_is_true:
+          name: int_email_events_gap_non_negative
+          arguments:
+            expression: >
+              seconds_since_delivered is null
+              or seconds_since_delivered >= 0
+      - dbt_utils.expression_is_true:
+          name: int_email_events_gap_null_matches
+          arguments:
+            expression: >
+              (last_delivered_at is null)
+              = (seconds_since_delivered is null)
+      - dbt_utils.expression_is_true:
+          name: int_email_events_open_click_has_delivery
+          arguments:
+            expression: >
+              event_type not in ('opened', 'clicked')
+              or last_delivered_at is not null
+          config:
+            severity: warn
+    columns:
+      - name: event_id
+        data_tests:
+          - unique
+          - not_null
+      - name: event_date_local
+        description: >
+          Toronto local date of event_timestamp.
+        data_tests:
+          - not_null
+      - name: last_delivered_at
+        description: >
+          Most recent delivered event at or before
+          this event, same member and campaign.
+          opened / clicked only.
+      - name: seconds_since_delivered
+        description: >
+          Seconds from last_delivered_at to this
+          event. opened / clicked only.
+      - name: is_suspected_bot
+        description: >
+          TRUE = gap below the threshold for this
+          event type. opened / clicked only; NULL
+          for other types (not applicable).
