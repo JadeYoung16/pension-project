@@ -677,3 +677,114 @@ models:
                   - Mobile-iOS
                   - Mobile-Android
                   - Unknown
+
+  - name: fct_buyback_experiment
+    description: >
+      Buyback reminder experiment. One row per
+      experiment member per campaign; PK =
+      (campaign_id, member_id). Roster = treatment +
+      control in the final send list. Observation
+      period = treatment send date + var
+      experiment_observation_days, shared by both
+      arms; control is sent after it ends. Funnel
+      dates count only the period (Toronto dates).
+      Primary metric (ITT): first_app_date is not
+      null, even if later cancelled; this differs
+      from the business rule that a cancelled
+      application does not count. Exclude
+      applied_before_send from the main analysis.
+      Funnel columns explain the mechanism and do
+      not replace the primary metric. Page views
+      are logged-in only, so treatment is
+      under-counted (anonymous email landings).
+      Splitting by employer sector gives small cells
+      and false positives are likely.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - campaign_id
+              - member_id
+      - dbt_utils.expression_is_true:
+          name: fct_buyback_experiment_dates_in_period
+          arguments:
+            expression: >
+              coalesce(first_delivered_date,
+                first_human_open_date,
+                first_human_click_date,
+                first_buyback_page_view_date,
+                first_app_date,
+                observation_start_date)
+                >= observation_start_date
+              and greatest(
+                coalesce(first_delivered_date,
+                  observation_start_date),
+                coalesce(first_human_open_date,
+                  observation_start_date),
+                coalesce(first_human_click_date,
+                  observation_start_date),
+                coalesce(first_buyback_page_view_date,
+                  observation_start_date),
+                coalesce(first_app_date,
+                  observation_start_date))
+                <= observation_end_date
+      - dbt_utils.expression_is_true:
+          name: fct_buyback_experiment_control_sent_after
+          arguments:
+            expression: >
+              arm <> 'control'
+              or scheduled_send_date
+                > observation_end_date
+      - dbt_utils.expression_is_true:
+          name: fct_buyback_experiment_followup_needs_app
+          arguments:
+            expression: >
+              first_app_date is not null
+              or (first_app_quote_date is null
+              and first_app_approved_date is null
+              and first_app_furthest_stage is null
+              and first_app_outcome is null)
+      - dbt_utils.expression_is_true:
+          name: fct_buyback_experiment_app_id_matches_date
+          arguments:
+            expression: >
+              (first_app_id is null)
+              = (first_app_date is null)
+    columns:
+      - name: campaign_id
+        data_tests:
+          - not_null
+      - name: member_id
+        data_tests:
+          - not_null
+      - name: member_sk
+        description: dim_member version on assigned_date.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_member')
+                field: member_sk
+      - name: employer_sk
+        description: dim_employer version on assigned_date.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_employer')
+                field: employer_sk
+      - name: observation_start_date
+        description: Treatment send date.
+        data_tests:
+          - not_null
+      - name: observation_end_date
+        description: Last day of the period (inclusive).
+        data_tests:
+          - not_null
+      - name: applied_before_send
+        description: >
+          Applied between assigned_date and the send
+          date. Kept for roster reconciliation;
+          exclude from conversion analysis.
+        data_tests:
+          - not_null

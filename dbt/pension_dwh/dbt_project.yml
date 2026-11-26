@@ -98,3 +98,7 @@ vars:
   # delivery is treated as machine-generated.
   bot_open_threshold_seconds: 60
   bot_click_threshold_seconds: 60
+  
+  # Experiment outcome window length (days),
+  # counted from the treatment send date.
+  experiment_observation_days: 90
